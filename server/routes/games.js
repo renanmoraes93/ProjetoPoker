@@ -1,107 +1,55 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const database = require('../config/database');
+const { query, getOne, getMany, transaction } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
-const db = database.getDb();
 
 // Listar todos os jogos
-router.get('/', authenticateToken, (req, res) => {
-  const { status, limit = 50 } = req.query;
-  
-  let query = `
-    SELECT g.*, u.username as created_by_username
-    FROM games g
-    LEFT JOIN users u ON g.created_by = u.id
-  `;
-  
-  let params = [];
-  
-  if (status) {
-    query += ' WHERE g.status = ?';
-    params.push(status);
-  }
-  
-  query += ' ORDER BY g.date DESC LIMIT ?';
-  params.push(parseInt(limit));
-  
-  db.all(query, params, (err, games) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erro ao buscar jogos' });
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const { status, limit = 50 } = req.query;
+    let sql = `SELECT g.*, u.username as created_by_username FROM games g LEFT JOIN users u ON g.created_by = u.id`;
+    const params = [];
+    if (status) {
+      sql += ' WHERE g.status = $1';
+      params.push(status);
     }
-    
-    // Buscar participantes para cada jogo
-    const gamesWithParticipants = [];
-    let completed = 0;
-    
+    sql += ` ORDER BY g.date DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+    const games = await getMany(sql, params);
     if (games.length === 0) {
       return res.json([]);
     }
-    
-    games.forEach((game, index) => {
-      db.all(`
-        SELECT gp.*, u.username, u.avatar
-        FROM game_participants gp
-        JOIN users u ON gp.user_id = u.id
-        WHERE gp.game_id = ?
-        ORDER BY gp.position ASC, gp.joined_at ASC
-      `, [game.id], (err, participants) => {
-        if (err) {
-          participants = [];
-        }
-        
-        gamesWithParticipants[index] = {
-          ...game,
-          participants,
-          participants_count: participants.length
-        };
-        
-        completed++;
-        if (completed === games.length) {
-          res.json(gamesWithParticipants);
-        }
-      });
-    });
-  });
+    const gamesWithParticipants = await Promise.all(games.map(async (game) => {
+      let participants = [];
+      try {
+        participants = await getMany(
+          `SELECT gp.*, u.username, u.avatar FROM game_participants gp JOIN users u ON gp.user_id = u.id WHERE gp.game_id = $1 ORDER BY gp.position ASC, gp.joined_at ASC`,
+          [game.id]
+        );
+      } catch (_) {}
+      return { ...game, participants, participants_count: participants.length };
+    }));
+    res.json(gamesWithParticipants);
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao buscar jogos' });
+  }
 });
 
 // Buscar jogo por ID
-router.get('/:id', authenticateToken, (req, res) => {
-  const gameId = req.params.id;
-  
-  db.get(`
-    SELECT g.*, u.username as created_by_username
-    FROM games g
-    LEFT JOIN users u ON g.created_by = u.id
-    WHERE g.id = ?
-  `, [gameId], (err, game) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erro ao buscar jogo' });
-    }
-    
+router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const game = await getOne(`SELECT g.*, u.username as created_by_username FROM games g LEFT JOIN users u ON g.created_by = u.id WHERE g.id = $1`, [gameId]);
     if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-    
-    // Buscar participantes
-    db.all(`
-      SELECT gp.*, u.username, u.avatar
-      FROM game_participants gp
-      JOIN users u ON gp.user_id = u.id
-      WHERE gp.game_id = ?
-      ORDER BY gp.position ASC, gp.joined_at ASC
-    `, [gameId], (err, participants) => {
-      if (err) {
-        return res.status(500).json({ message: 'Erro ao buscar participantes' });
-      }
-      
-      res.json({
-        ...game,
-        participants
-      });
-    });
-  });
+    const participants = await getMany(`SELECT gp.*, u.username, u.avatar FROM game_participants gp JOIN users u ON gp.user_id = u.id WHERE gp.game_id = $1 ORDER BY gp.position ASC, gp.joined_at ASC`, [gameId]);
+    res.json({ ...game, participants });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao buscar jogo' });
+  }
 });
 
 // Criar novo jogo (apenas admin)
@@ -112,125 +60,70 @@ router.post('/', authenticateToken, requireAdmin, [
   body('rebuy_value').optional().isFloat({ min: 0 }).withMessage('Valor do Rebuy inválido'),
   body('addon_value').optional().isFloat({ min: 0 }).withMessage('Valor do Add-on inválido'),
   body('max_players').optional().isInt({ min: 2, max: 10 }).withMessage('Máximo de jogadores deve ser entre 2 e 10')
-], (req, res) => {
+], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   const { name, date, buy_in, rebuy_value = 0, addon_value = 0, max_players = 9 } = req.body;
-  
-  db.run(
-    'INSERT INTO games (name, date, buy_in, rebuy_value, addon_value, max_players, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [name, date, buy_in, rebuy_value, addon_value, max_players, req.user.id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ message: 'Erro ao criar jogo' });
-      }
-      
-      res.status(201).json({
-        message: 'Jogo criado com sucesso',
-        gameId: this.lastID
-      });
-    }
-  );
+  try {
+    const result = await query(
+      'INSERT INTO games (name, date, buy_in, rebuy_value, addon_value, max_players, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [name, date, buy_in, rebuy_value, addon_value, max_players, req.user.id]
+    );
+    res.status(201).json({ message: 'Jogo criado com sucesso', gameId: result.rows[0].id });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao criar jogo' });
+  }
 });
 
 // Participar de um jogo
-router.post('/:id/join', authenticateToken, (req, res) => {
-  const gameId = req.params.id;
-  const userId = req.user.id;
-  
-  // Verificar se o jogo existe e está aberto
-  db.get('SELECT * FROM games WHERE id = ?', [gameId], (err, game) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erro ao buscar jogo' });
-    }
-    
+router.post('/:id/join', authenticateToken, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const userId = req.user.id;
+    const game = await getOne('SELECT * FROM games WHERE id = $1', [gameId]);
     if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-    
     if (game.status !== 'scheduled') {
       return res.status(400).json({ message: 'Jogo não está aberto para inscrições' });
     }
-    
-    // Verificar se já está participando
-    db.get(
-      'SELECT * FROM game_participants WHERE game_id = ? AND user_id = ?',
-      [gameId, userId],
-      (err, participant) => {
-        if (err) {
-          return res.status(500).json({ message: 'Erro ao verificar participação' });
-        }
-        
-        if (participant) {
-          return res.status(400).json({ message: 'Você já está participando deste jogo' });
-        }
-        
-        // Verificar limite de jogadores
-        db.get(
-          'SELECT COUNT(*) as count FROM game_participants WHERE game_id = ?',
-          [gameId],
-          (err, result) => {
-            if (err) {
-              return res.status(500).json({ message: 'Erro ao verificar vagas' });
-            }
-            
-            if (result.count >= game.max_players) {
-              return res.status(400).json({ message: 'Jogo lotado' });
-            }
-            
-            // Adicionar participante
-            db.run(
-              'INSERT INTO game_participants (game_id, user_id) VALUES (?, ?)',
-              [gameId, userId],
-              function(err) {
-                if (err) {
-                  return res.status(500).json({ message: 'Erro ao participar do jogo' });
-                }
-                
-                res.json({ message: 'Participação confirmada!' });
-              }
-            );
-          }
-        );
-      }
-    );
-  });
+    const participant = await getOne('SELECT * FROM game_participants WHERE game_id = $1 AND user_id = $2', [gameId, userId]);
+    if (participant) {
+      return res.status(400).json({ message: 'Você já está participando deste jogo' });
+    }
+    const countRes = await getOne('SELECT COUNT(*)::int as count FROM game_participants WHERE game_id = $1', [gameId]);
+    if (countRes.count >= game.max_players) {
+      return res.status(400).json({ message: 'Jogo lotado' });
+    }
+    await query('INSERT INTO game_participants (game_id, user_id) VALUES ($1, $2)', [gameId, userId]);
+    res.json({ message: 'Participação confirmada!' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao participar do jogo' });
+  }
 });
 
 // Sair de um jogo
-router.delete('/:id/leave', authenticateToken, (req, res) => {
-  const gameId = req.params.id;
-  const userId = req.user.id;
-  
-  // Verificar se o jogo ainda está aberto
-  db.get('SELECT status FROM games WHERE id = ?', [gameId], (err, game) => {
-    if (err || !game) {
+router.delete('/:id/leave', authenticateToken, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const userId = req.user.id;
+    const game = await getOne('SELECT status FROM games WHERE id = $1', [gameId]);
+    if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-    
     if (game.status !== 'scheduled') {
       return res.status(400).json({ message: 'Não é possível sair de um jogo já iniciado' });
     }
-    
-    db.run(
-      'DELETE FROM game_participants WHERE game_id = ? AND user_id = ?',
-      [gameId, userId],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ message: 'Erro ao sair do jogo' });
-        }
-        
-        if (this.changes === 0) {
-          return res.status(400).json({ message: 'Você não está participando deste jogo' });
-        }
-        
-        res.json({ message: 'Você saiu do jogo' });
-      }
-    );
-  });
+    const delRes = await query('DELETE FROM game_participants WHERE game_id = $1 AND user_id = $2', [gameId, userId]);
+    if (delRes.rowCount === 0) {
+      return res.status(400).json({ message: 'Você não está participando deste jogo' });
+    }
+    res.json({ message: 'Você saiu do jogo' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao sair do jogo' });
+  }
 });
 
 // Finalizar jogo e registrar resultados (apenas admin)
@@ -240,256 +133,137 @@ router.put('/:id/finish', authenticateToken, requireAdmin, [
   body('results.*.position').isInt({ min: 1 }).withMessage('Posição inválida'),
   body('results.*.points_earned').optional().isInt({ min: 0 }).withMessage('Pontos inválidos'),
   body('results.*.prize_amount').optional().isFloat({ min: 0 }).withMessage('Prêmio inválido')
-], (req, res) => {
+], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   const gameId = req.params.id;
   const { results, prize_pool } = req.body;
-  
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
-    
-    // Atualizar status do jogo
-    db.run(
-      'UPDATE games SET status = ?, prize_pool = ? WHERE id = ?',
-      ['finished', prize_pool || 0, gameId]
-    );
-    
-    // Atualizar resultados dos participantes
-    results.forEach(result => {
-      const points = result.points_earned || (11 - result.position) * 10; // Sistema de pontos padrão
-      
-      db.run(
-        `UPDATE game_participants 
-         SET position = ?, points_earned = ?, prize_amount = ?
-         WHERE game_id = ? AND user_id = ?`,
-        [result.position, points, result.prize_amount || 0, gameId, result.user_id]
-      );
-      
-      // Atualizar estatísticas do usuário
-      db.run(
-        `UPDATE users 
-         SET total_points = total_points + ?, 
-             games_played = games_played + 1,
-             wins = wins + ?
-         WHERE id = ?`,
-        [points, result.position === 1 ? 1 : 0, result.user_id]
-      );
-    });
-    
-    db.run('COMMIT', (err) => {
-      if (err) {
-        db.run('ROLLBACK');
-        return res.status(500).json({ message: 'Erro ao finalizar jogo' });
+  try {
+    await transaction(async (client) => {
+      await client.query('UPDATE games SET status = $1, prize_pool = $2 WHERE id = $3', ['finished', prize_pool || 0, gameId]);
+      for (const result of results) {
+        const points = result.points_earned || (11 - result.position) * 10;
+        await client.query(
+          `UPDATE game_participants SET position = $1, points_earned = $2, prize_amount = $3 WHERE game_id = $4 AND user_id = $5`,
+          [result.position, points, result.prize_amount || 0, gameId, result.user_id]
+        );
+        await client.query(
+          `UPDATE users SET total_points = total_points + $1, games_played = games_played + 1, wins = wins + $2 WHERE id = $3`,
+          [points, result.position === 1 ? 1 : 0, result.user_id]
+        );
       }
-      
-      res.json({ message: 'Jogo finalizado com sucesso!' });
     });
-  });
+    res.json({ message: 'Jogo finalizado com sucesso!' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao finalizar jogo' });
+  }
 });
 
 // Atualizar jogo (apenas admin)
-router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   const gameId = req.params.id;
   const { name, date, buy_in, rebuy_value, addon_value, max_players, status } = req.body;
-  
-  let updateFields = [];
-  let values = [];
-  
-  if (name) {
-    updateFields.push('name = ?');
-    values.push(name);
-  }
-  
-  if (date) {
-    updateFields.push('date = ?');
-    values.push(date);
-  }
-  
-  if (buy_in !== undefined) {
-    updateFields.push('buy_in = ?');
-    values.push(buy_in);
-  }
-
-  if (rebuy_value !== undefined) {
-    updateFields.push('rebuy_value = ?');
-    values.push(rebuy_value);
-  }
-
-  if (addon_value !== undefined) {
-    updateFields.push('addon_value = ?');
-    values.push(addon_value);
-  }
-  
-  if (max_players) {
-    updateFields.push('max_players = ?');
-    values.push(max_players);
-  }
-  
-  if (status) {
-    updateFields.push('status = ?');
-    values.push(status);
-  }
-  
+  const updateFields = [];
+  const values = [];
+  if (name) { updateFields.push(`name = $${values.length + 1}`); values.push(name); }
+  if (date) { updateFields.push(`date = $${values.length + 1}`); values.push(date); }
+  if (buy_in !== undefined) { updateFields.push(`buy_in = $${values.length + 1}`); values.push(buy_in); }
+  if (rebuy_value !== undefined) { updateFields.push(`rebuy_value = $${values.length + 1}`); values.push(rebuy_value); }
+  if (addon_value !== undefined) { updateFields.push(`addon_value = $${values.length + 1}`); values.push(addon_value); }
+  if (max_players) { updateFields.push(`max_players = $${values.length + 1}`); values.push(max_players); }
+  if (status) { updateFields.push(`status = $${values.length + 1}`); values.push(status); }
   if (updateFields.length === 0) {
     return res.status(400).json({ message: 'Nenhum campo para atualizar' });
   }
-  
   values.push(gameId);
-  
-  const query = `UPDATE games SET ${updateFields.join(', ')} WHERE id = ?`;
-  
-  db.run(query, values, function(err) {
-    if (err) {
-      return res.status(500).json({ message: 'Erro ao atualizar jogo' });
-    }
-    
-    if (this.changes === 0) {
+  const sql = `UPDATE games SET ${updateFields.join(', ')} WHERE id = $${values.length}`;
+  try {
+    const r = await query(sql, values);
+    if (r.rowCount === 0) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-    
     res.json({ message: 'Jogo atualizado com sucesso' });
-  });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao atualizar jogo' });
+  }
 });
 
 // Deletar jogo (apenas admin)
-router.delete('/:id', authenticateToken, requireAdmin, (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   const gameId = req.params.id;
-  
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
-    
-    // Deletar participantes primeiro
-    db.run('DELETE FROM game_participants WHERE game_id = ?', [gameId]);
-    
-    // Deletar o jogo
-    db.run('DELETE FROM games WHERE id = ?', [gameId], function(err) {
-      if (err) {
-        db.run('ROLLBACK');
-        return res.status(500).json({ message: 'Erro ao deletar jogo' });
+  try {
+    await transaction(async (client) => {
+      await client.query('DELETE FROM game_participants WHERE game_id = $1', [gameId]);
+      const r = await client.query('DELETE FROM games WHERE id = $1', [gameId]);
+      if (r.rowCount === 0) {
+        throw new Error('not_found');
       }
-      
-      if (this.changes === 0) {
-        db.run('ROLLBACK');
-        return res.status(404).json({ message: 'Jogo não encontrado' });
-      }
-      
-      db.run('COMMIT', (err) => {
-        if (err) {
-          return res.status(500).json({ message: 'Erro ao confirmar deleção' });
-        }
-        
-        res.json({ message: 'Jogo deletado com sucesso' });
-      });
     });
-  });
+    res.json({ message: 'Jogo deletado com sucesso' });
+  } catch (e) {
+    if (e.message === 'not_found') {
+      return res.status(404).json({ message: 'Jogo não encontrado' });
+    }
+    res.status(500).json({ message: 'Erro ao deletar jogo' });
+  }
 });
 
 // Adicionar participante (Admin apenas)
 router.post('/:id/participants', authenticateToken, requireAdmin, [
   body('user_id').isInt().withMessage('ID do usuário inválido')
-], (req, res) => {
+], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   const gameId = req.params.id;
   const { user_id } = req.body;
-
-  // Verificar se o jogo existe
-  db.get('SELECT * FROM games WHERE id = ?', [gameId], (err, game) => {
-    if (err || !game) {
+  try {
+    const game = await getOne('SELECT * FROM games WHERE id = $1', [gameId]);
+    if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-
-    // Verificar se o usuário existe
-    db.get('SELECT * FROM users WHERE id = ?', [user_id], (err, user) => {
-      if (err || !user) {
-        return res.status(404).json({ message: 'Usuário não encontrado' });
-      }
-
-      // Verificar se já está participando
-      db.get(
-        'SELECT * FROM game_participants WHERE game_id = ? AND user_id = ?',
-        [gameId, user_id],
-        (err, participant) => {
-          if (err) {
-            return res.status(500).json({ message: 'Erro ao verificar participação' });
-          }
-
-          if (participant) {
-            return res.status(400).json({ message: 'Usuário já está participando deste jogo' });
-          }
-
-          // Verificar limite de jogadores
-          db.get(
-            'SELECT COUNT(*) as count FROM game_participants WHERE game_id = ?',
-            [gameId],
-            (err, result) => {
-              if (err) {
-                return res.status(500).json({ message: 'Erro ao verificar vagas' });
-              }
-
-              if (result.count >= game.max_players) {
-                return res.status(400).json({ message: 'Jogo lotado' });
-              }
-
-              // Adicionar participante
-              db.run(
-                'INSERT INTO game_participants (game_id, user_id) VALUES (?, ?)',
-                [gameId, user_id],
-                function(err) {
-                  if (err) {
-                    return res.status(500).json({ message: 'Erro ao adicionar participante' });
-                  }
-
-                  res.json({ message: 'Participante adicionado com sucesso!' });
-                }
-              );
-            }
-          );
-        }
-      );
-    });
-  });
+    const user = await getOne('SELECT * FROM users WHERE id = $1', [user_id]);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    const participant = await getOne('SELECT * FROM game_participants WHERE game_id = $1 AND user_id = $2', [gameId, user_id]);
+    if (participant) {
+      return res.status(400).json({ message: 'Usuário já está participando deste jogo' });
+    }
+    const countRes = await getOne('SELECT COUNT(*)::int as count FROM game_participants WHERE game_id = $1', [gameId]);
+    if (countRes.count >= game.max_players) {
+      return res.status(400).json({ message: 'Jogo lotado' });
+    }
+    await query('INSERT INTO game_participants (game_id, user_id) VALUES ($1, $2)', [gameId, user_id]);
+    res.json({ message: 'Participante adicionado com sucesso!' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao adicionar participante' });
+  }
 });
 
 // Remover participante (Admin apenas)
-router.delete('/:id/participants/:userId', authenticateToken, requireAdmin, (req, res) => {
-  const gameId = req.params.id;
-  const userId = req.params.userId;
-
-  // Verificar se o jogo existe
-  db.get('SELECT * FROM games WHERE id = ?', [gameId], (err, game) => {
-    if (err || !game) {
+router.delete('/:id/participants/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const userId = req.params.userId;
+    const game = await getOne('SELECT * FROM games WHERE id = $1', [gameId]);
+    if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-
-    // Não permitir remoção se o jogo já foi finalizado
     if (game.status === 'finished') {
       return res.status(400).json({ message: 'Não é possível remover participantes de um jogo finalizado' });
     }
-
-    db.run(
-      'DELETE FROM game_participants WHERE game_id = ? AND user_id = ?',
-      [gameId, userId],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ message: 'Erro ao remover participante' });
-        }
-
-        if (this.changes === 0) {
-          return res.status(400).json({ message: 'Participante não encontrado neste jogo' });
-        }
-
-        res.json({ message: 'Participante removido com sucesso' });
-      }
-    );
-  });
+    const r = await query('DELETE FROM game_participants WHERE game_id = $1 AND user_id = $2', [gameId, userId]);
+    if (r.rowCount === 0) {
+      return res.status(400).json({ message: 'Participante não encontrado neste jogo' });
+    }
+    res.json({ message: 'Participante removido com sucesso' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao remover participante' });
+  }
 });
 
 // Atualizar posições finais (Admin apenas)
@@ -497,134 +271,73 @@ router.put('/:id/positions', authenticateToken, requireAdmin, [
   body('positions').isArray().withMessage('Posições devem ser um array'),
   body('positions.*.user_id').isInt().withMessage('ID do usuário inválido'),
   body('positions.*.position').isInt({ min: 1 }).withMessage('Posição inválida')
-], (req, res) => {
+], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   const gameId = req.params.id;
   const { positions } = req.body;
-
-  // Verificar se o jogo existe e está finalizado
-  db.get('SELECT * FROM games WHERE id = ?', [gameId], (err, game) => {
-    if (err || !game) {
+  try {
+    const game = await getOne('SELECT * FROM games WHERE id = $1', [gameId]);
+    if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
-
     if (game.status !== 'finished') {
       return res.status(400).json({ message: 'Só é possível atualizar posições de jogos finalizados' });
     }
-
-    db.serialize(() => {
-      db.run('BEGIN TRANSACTION');
-
-      let hasError = false;
-
-      // Atualizar posições
-      positions.forEach(pos => {
-        if (hasError) return;
-
-        const points = (11 - pos.position) * 10; // Recalcular pontos baseado na nova posição
-
-        db.run(
-          `UPDATE game_participants 
-           SET position = ?, points_earned = ?
-           WHERE game_id = ? AND user_id = ?`,
-          [pos.position, points, gameId, pos.user_id],
-          function(err) {
-            if (err) {
-              hasError = true;
-              db.run('ROLLBACK');
-              return res.status(500).json({ message: 'Erro ao atualizar posições' });
-            }
-          }
+    await transaction(async (client) => {
+      for (const pos of positions) {
+        const points = (11 - pos.position) * 10;
+        await client.query(
+          `UPDATE game_participants SET position = $1, points_earned = $2 WHERE game_id = $3 AND user_id = $4`,
+          [pos.position, points, gameId, pos.user_id]
         );
-      });
-
-      if (!hasError) {
-        db.run('COMMIT', (err) => {
-          if (err) {
-            return res.status(500).json({ message: 'Erro ao confirmar atualizações' });
-          }
-          res.json({ message: 'Posições atualizadas com sucesso!' });
-        });
       }
     });
-  });
+    res.json({ message: 'Posições atualizadas com sucesso!' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao atualizar posições' });
+  }
 });
 
   // Atualizar participante (Admin apenas) - Rebuys e Add-ons
-  router.put('/:id/participants/:userId', authenticateToken, requireAdmin, (req, res) => {
-    // console.log('--- DEBUG UPDATE STATS (RAW) ---');
-    // console.log('Body:', req.body);
-    
+  router.put('/:id/participants/:userId', authenticateToken, requireAdmin, async (req, res) => {
     const gameId = req.params.id;
     const userId = req.params.userId;
-    
-    // Extração robusta
     let rebuys = req.body.rebuys;
     let addons = req.body.addons;
-
-    // Se vier como string "0", "1", etc., converter
     if (rebuys !== undefined && rebuys !== null) {
       rebuys = parseInt(rebuys, 10);
     }
-    
     if (addons !== undefined && addons !== null) {
       addons = parseInt(addons, 10);
     }
-
-    let updateFields = [];
-    let values = [];
-
-    // Verificação simplificada: se é um número válido (incluindo 0), aceita.
-    // isNaN(null) é false (0), mas isNaN(undefined) é true.
-    // Acima garantimos que se não for null/undefined, virou int.
-    // Então checamos se não é NaN.
-
+    const updateFields = [];
+    const values = [];
     if (rebuys !== undefined && rebuys !== null && !isNaN(rebuys) && rebuys >= 0) {
-      updateFields.push('rebuys = ?');
+      updateFields.push(`rebuys = $${values.length + 1}`);
       values.push(rebuys);
     }
-
     if (addons !== undefined && addons !== null && !isNaN(addons) && addons >= 0) {
-      updateFields.push('addons = ?');
+      updateFields.push(`addons = $${values.length + 1}`);
       values.push(addons);
     }
-
     if (updateFields.length === 0) {
-      // Log detalhado no servidor para ajudar
-      console.error('Update participant failed - No valid fields.', {
-        receivedBody: req.body,
-        parsed: { rebuys, addons }
-      });
-      
-      return res.status(400).json({ 
-        message: 'Nenhum campo para atualizar. Verifique os dados enviados.',
-        received: req.body 
-      });
+      return res.status(400).json({ message: 'Nenhum campo para atualizar. Verifique os dados enviados.', received: req.body });
     }
-
     values.push(gameId);
     values.push(userId);
-
-    const query = `UPDATE game_participants SET ${updateFields.join(', ')} WHERE game_id = ? AND user_id = ?`;
-
-    db.run(query, values, function(err) {
-      if (err) {
-        console.error('DB ERROR:', err);
-        return res.status(500).json({ message: 'Erro ao atualizar participante: ' + err.message });
-      }
-
-      if (this.changes === 0) {
-        // console.log('NO CHANGES - User not found in game?', { gameId, userId });
-        // Check if user exists in game just to give better error
+    const sql = `UPDATE game_participants SET ${updateFields.join(', ')} WHERE game_id = $${values.length - 1} AND user_id = $${values.length}`;
+    try {
+      const r = await query(sql, values);
+      if (r.rowCount === 0) {
         return res.status(404).json({ message: 'Participante não encontrado neste jogo' });
       }
-
       res.json({ message: 'Participante atualizado com sucesso' });
-    });
+    } catch (e) {
+      res.status(500).json({ message: 'Erro ao atualizar participante: ' + e.message });
+    }
   });
 
 module.exports = router;
