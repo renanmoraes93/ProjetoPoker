@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 
 const connectionString = process.env.DATABASE_URL;
 const ssl = process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false };
@@ -83,12 +84,43 @@ class Database {
     await pool.query(`
       INSERT INTO club_settings (setting_key, setting_value)
       VALUES 
-        ('club_name', 'Gorila'z Poker Club'),
-        ('club_description', 'O melhor clube de poker da região'),
-        ('points_system', 'standard'),
-        ('default_buy_in', '50.00')
+        ($1, $2),
+        ($3, $4),
+        ($5, $6),
+        ($7, $8)
       ON CONFLICT (setting_key) DO NOTHING
-    `);
+      `,
+      [
+        'club_name',
+        "Gorila'z Poker Club",
+        'club_description',
+        'O melhor clube de poker da região',
+        'points_system',
+        'standard',
+        'default_buy_in',
+        '50.00',
+      ]
+    );
+
+    const adminPassword = await bcrypt.hash('admin123', 10);
+    await pool.query(
+      `
+      INSERT INTO users (username, email, password, role, total_points, games_played, wins)
+      VALUES ($1, $2, $3, $4, 0, 0, 0)
+      ON CONFLICT (email) DO NOTHING
+      `,
+      ['admin', 'admin@gorilapoker.com', adminPassword, 'admin']
+    );
+
+    const playerPassword = await bcrypt.hash('senha123', 10);
+    await pool.query(
+      `
+      INSERT INTO users (username, email, password, role, total_points, games_played, wins)
+      VALUES ($1, $2, $3, $4, 0, 0, 0)
+      ON CONFLICT (email) DO NOTHING
+      `,
+      ['king', 'king@gorilapoker.com', playerPassword, 'player']
+    );
   }
 
   async runMigrations() {
