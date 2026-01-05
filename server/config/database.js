@@ -13,7 +13,7 @@ class Database {
 
   async init() {
     await this.initTables();
-    await this.runMigrations();
+    try { await this.runMigrations(); } catch (_) {}
   }
 
   async initTables() {
@@ -128,6 +128,50 @@ class Database {
     await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS addon_value NUMERIC(10,2) DEFAULT 0`);
     await pool.query(`ALTER TABLE game_participants ADD COLUMN IF NOT EXISTS rebuys INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE game_participants ADD COLUMN IF NOT EXISTS addons INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS blind_schedule JSONB`);
+    await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_status VARCHAR(20) DEFAULT 'idle'`);
+    await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_paused_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_total_paused_seconds INTEGER DEFAULT 0`);
+
+    const defaultSchedule = JSON.stringify([
+      { level: 1, sb: 10, bb: 20, ante: 0, duration_sec: 600 },
+      { level: 2, sb: 20, bb: 40, ante: 0, duration_sec: 600 },
+      { level: 3, sb: 30, bb: 60, ante: 0, duration_sec: 600 },
+      { level: 4, sb: 50, bb: 100, ante: 0, duration_sec: 600 },
+      { level: 'break', name: 'Break', duration_sec: 300 },
+      { level: 5, sb: 100, bb: 200, ante: 0, duration_sec: 600 },
+      { level: 6, sb: 200, bb: 400, ante: 0, duration_sec: 600 }
+    ]);
+    try {
+      const jsonLiteral = defaultSchedule.replace(/'/g, "''");
+      await pool.query(
+        `UPDATE games SET blind_schedule = COALESCE(blind_schedule, '${jsonLiteral}'::jsonb)`
+      );
+    } catch (_) {}
+
+    const defaultPresets = JSON.stringify([
+      {
+        name: 'Padrão',
+        levels: [
+          { level: 1, sb: 10, bb: 20, ante: 0, duration_sec: 600 },
+          { level: 2, sb: 20, bb: 40, ante: 0, duration_sec: 600 },
+          { level: 3, sb: 30, bb: 60, ante: 0, duration_sec: 600 },
+          { level: 4, sb: 50, bb: 100, ante: 0, duration_sec: 600 },
+          { level: 'break', name: 'Break', duration_sec: 300 },
+          { level: 5, sb: 100, bb: 200, ante: 0, duration_sec: 600 },
+          { level: 6, sb: 200, bb: 400, ante: 0, duration_sec: 600 }
+        ]
+      }
+    ]);
+    try {
+      await pool.query(
+        `INSERT INTO club_settings (setting_key, setting_value)
+         VALUES ($1, $2)
+         ON CONFLICT (setting_key) DO NOTHING`,
+        ['blind_presets', defaultPresets]
+      );
+    } catch (_) {}
   }
 }
 

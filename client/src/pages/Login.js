@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Eye, EyeOff, Mail, Lock, Crown, LogIn } from 'lucide-react';
+import { Eye, EyeOff, User, Lock, Crown, LogIn } from 'lucide-react';
 import './Auth.css';
 
 function Login() {
   const [formData, setFormData] = useState({
-    email: '',
+    username: '',
     password: ''
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -34,17 +34,14 @@ function Login() {
 
   const validateForm = () => {
     const newErrors = {};
-    
-    if (!formData.email) {
-      newErrors.email = 'Email é obrigatório';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email inválido';
+    if (!formData.username) {
+      newErrors.username = 'Usuário é obrigatório';
+    } else if (formData.username.length < 3) {
+      newErrors.username = 'Usuário deve ter ao menos 3 caracteres';
     }
-    
     if (!formData.password) {
       newErrors.password = 'Senha é obrigatória';
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -59,7 +56,7 @@ function Login() {
     setLoading(true);
     
     try {
-      const result = await login(formData.email, formData.password);
+      const result = await login(formData.username, formData.password);
       
       if (result.success) {
         navigate('/dashboard');
@@ -88,30 +85,30 @@ function Login() {
           <div className="demo-credentials">
             <h4>Credenciais de Demonstração:</h4>
             <div className="demo-item">
-              <strong>Admin:</strong> admin@gorilapoker.com / admin123
+              <strong>Admin:</strong> admin / admin123
             </div>
             <div className="demo-item">
-              <strong>Jogador:</strong> king@gorilapoker.com / senha123
+              <strong>Jogador:</strong> king / senha123
             </div>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">
-              <label htmlFor="email">Email</label>
+              <label htmlFor="username">Usuário</label>
               <div className="input-wrapper">
-                <Mail className="input-icon" size={20} />
+                <User className="input-icon" size={20} />
                 <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.email}
+                  type="text"
+                  id="username"
+                  name="username"
+                  value={formData.username}
                   onChange={handleChange}
-                  placeholder="seu@email.com"
-                  className={errors.email ? 'error' : ''}
+                  placeholder="seu usuário"
+                  className={errors.username ? 'error' : ''}
                 />
               </div>
-              {errors.email && <span className="error-message">{errors.email}</span>}
+              {errors.username && <span className="error-message">{errors.username}</span>}
             </div>
 
             <div className="form-group">

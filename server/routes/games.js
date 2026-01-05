@@ -167,6 +167,27 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { name, date, buy_in, rebuy_value, addon_value, max_players, status } = req.body;
   const updateFields = [];
   const values = [];
+  try {
+    const currentGame = await getOne('SELECT id, status FROM games WHERE id = $1', [gameId]);
+    if (!currentGame) {
+      return res.status(404).json({ message: 'Jogo não encontrado' });
+    }
+    if (status) {
+      if (status === 'in_progress') {
+        if (currentGame.status !== 'scheduled') {
+          return res.status(400).json({ message: 'Transição inválida de status' });
+        }
+        const countRes = await getOne('SELECT COUNT(*)::int as count FROM game_participants WHERE game_id = $1', [gameId]);
+        if ((countRes.count || 0) < 2) {
+          return res.status(400).json({ message: 'É necessário pelo menos 2 participantes para iniciar o jogo' });
+        }
+      } else if (status === 'finished') {
+        return res.status(400).json({ message: 'Use o endpoint /finish para finalizar o jogo' });
+      }
+    }
+  } catch (e) {
+    return res.status(500).json({ message: 'Erro ao validar status do jogo' });
+  }
   if (name) { updateFields.push(`name = $${values.length + 1}`); values.push(name); }
   if (date) { updateFields.push(`date = $${values.length + 1}`); values.push(date); }
   if (buy_in !== undefined) { updateFields.push(`buy_in = $${values.length + 1}`); values.push(buy_in); }
@@ -305,6 +326,17 @@ router.put('/:id/positions', authenticateToken, requireAdmin, [
   router.put('/:id/participants/:userId', authenticateToken, requireAdmin, async (req, res) => {
     const gameId = req.params.id;
     const userId = req.params.userId;
+    try {
+      const game = await getOne('SELECT status FROM games WHERE id = $1', [gameId]);
+      if (!game) {
+        return res.status(404).json({ message: 'Jogo não encontrado' });
+      }
+      if (game.status === 'finished') {
+        return res.status(400).json({ message: 'Não é possível atualizar rebuys/add-ons em jogo finalizado' });
+      }
+    } catch (e) {
+      return res.status(500).json({ message: 'Erro ao validar jogo' });
+    }
     let rebuys = req.body.rebuys;
     let addons = req.body.addons;
     if (rebuys !== undefined && rebuys !== null) {
@@ -341,3 +373,149 @@ router.put('/:id/positions', authenticateToken, requireAdmin, [
   });
 
 module.exports = router;
+// Timer endpoints
+router.get('/:id/timer', authenticateToken, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const game = await getOne('SELECT blind_schedule, timer_status, timer_started_at, timer_paused_at, timer_total_paused_seconds, status FROM games WHERE id = $1', [gameId]);
+    if (!game) {
+      return res.status(404).json({ message: 'Jogo não encontrado' });
+    }
+    let schedule = Array.isArray(game.blind_schedule) ? game.blind_schedule : JSON.parse(game.blind_schedule || '[]');
+    if (!schedule || schedule.length === 0) {
+      schedule = [
+        { level: 1, sb: 10, bb: 20, ante: 0, duration_sec: 600 },
+        { level: 2, sb: 20, bb: 40, ante: 0, duration_sec: 600 },
+        { level: 3, sb: 30, bb: 60, ante: 0, duration_sec: 600 },
+        { level: 4, sb: 50, bb: 100, ante: 0, duration_sec: 600 },
+        { level: 'break', name: 'Break', duration_sec: 300 },
+        { level: 5, sb: 100, bb: 200, ante: 0, duration_sec: 600 },
+        { level: 6, sb: 200, bb: 400, ante: 0, duration_sec: 600 }
+      ];
+      try { await query('UPDATE games SET blind_schedule = $1 WHERE id = $2', [JSON.stringify(schedule), gameId]); } catch (_) {}
+    }
+    const nowTs = Date.now();
+    let elapsed = 0;
+    if (game.timer_started_at) {
+      const startedTs = new Date(game.timer_started_at).getTime();
+      const pausedTs = game.timer_paused_at ? new Date(game.timer_paused_at).getTime() : null;
+      const baseElapsed = (pausedTs ? pausedTs : nowTs) - startedTs;
+      elapsed = Math.max(0, Math.floor(baseElapsed / 1000) - (game.timer_total_paused_seconds || 0));
+    }
+    let cum = 0;
+    let idx = 0;
+    let remaining = 0;
+    for (let i = 0; i < schedule.length; i++) {
+      const dur = schedule[i].duration_sec || 0;
+      if (elapsed < cum + dur) {
+        idx = i;
+        remaining = Math.max(0, cum + dur - elapsed);
+        break;
+      }
+      cum += dur;
+      idx = i;
+      remaining = 0;
+    }
+    const current = schedule[idx] || null;
+    const next = schedule[idx + 1] || null;
+    res.json({
+      status: game.timer_status || 'idle',
+      started_at: game.timer_started_at,
+      paused_at: game.timer_paused_at,
+      total_paused_seconds: game.timer_total_paused_seconds || 0,
+      schedule,
+      current_index: idx,
+      current,
+      next,
+      remaining_seconds: remaining
+    });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao obter timer' });
+  }
+});
+
+router.put('/:id/timer/start', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const game = await getOne('SELECT status, blind_schedule FROM games WHERE id = $1', [gameId]);
+    if (!game) return res.status(404).json({ message: 'Jogo não encontrado' });
+    if (game.status !== 'in_progress') return res.status(400).json({ message: 'Inicie o jogo antes de iniciar o timer' });
+    try {
+      const schedule = Array.isArray(game.blind_schedule) ? game.blind_schedule : JSON.parse(game.blind_schedule || '[]');
+      if (!schedule || schedule.length === 0) {
+        const def = [
+          { level: 1, sb: 10, bb: 20, ante: 0, duration_sec: 600 },
+          { level: 2, sb: 20, bb: 40, ante: 0, duration_sec: 600 },
+          { level: 3, sb: 30, bb: 60, ante: 0, duration_sec: 600 },
+          { level: 4, sb: 50, bb: 100, ante: 0, duration_sec: 600 },
+          { level: 'break', name: 'Break', duration_sec: 300 },
+          { level: 5, sb: 100, bb: 200, ante: 0, duration_sec: 600 },
+          { level: 6, sb: 200, bb: 400, ante: 0, duration_sec: 600 }
+        ];
+        await query('UPDATE games SET blind_schedule = $1 WHERE id = $2', [JSON.stringify(def), gameId]);
+      }
+    } catch (_) {}
+    await query('UPDATE games SET timer_status = $1, timer_started_at = NOW(), timer_paused_at = NULL, timer_total_paused_seconds = 0 WHERE id = $2', ['running', gameId]);
+    res.json({ message: 'Timer iniciado' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao iniciar timer' });
+  }
+});
+
+router.put('/:id/timer/pause', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const g = await getOne('SELECT timer_status FROM games WHERE id = $1', [gameId]);
+    if (!g) return res.status(404).json({ message: 'Jogo não encontrado' });
+    if (g.timer_status !== 'running') return res.status(400).json({ message: 'Timer não está em execução' });
+    await query('UPDATE games SET timer_status = $1, timer_paused_at = NOW() WHERE id = $2', ['paused', gameId]);
+    res.json({ message: 'Timer pausado' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao pausar timer' });
+  }
+});
+
+router.put('/:id/timer/resume', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const g = await getOne('SELECT timer_status, timer_paused_at, timer_total_paused_seconds FROM games WHERE id = $1', [gameId]);
+    if (!g) return res.status(404).json({ message: 'Jogo não encontrado' });
+    if (g.timer_status !== 'paused') return res.status(400).json({ message: 'Timer não está pausado' });
+    const pausedAt = g.timer_paused_at ? new Date(g.timer_paused_at).getTime() : null;
+    const nowTs = Date.now();
+    const add = pausedAt ? Math.floor((nowTs - pausedAt) / 1000) : 0;
+    await query('UPDATE games SET timer_status = $1, timer_paused_at = NULL, timer_total_paused_seconds = $2 WHERE id = $3', ['running', (g.timer_total_paused_seconds || 0) + add, gameId]);
+    res.json({ message: 'Timer retomado' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao retomar timer' });
+  }
+});
+
+router.put('/:id/timer/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const g = await getOne('SELECT id FROM games WHERE id = $1', [gameId]);
+    if (!g) return res.status(404).json({ message: 'Jogo não encontrado' });
+    await query('UPDATE games SET timer_status = $1, timer_started_at = NULL, timer_paused_at = NULL, timer_total_paused_seconds = 0 WHERE id = $2', ['idle', gameId]);
+    res.json({ message: 'Timer resetado' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao resetar timer' });
+  }
+});
+
+router.put('/:id/timer/schedule', authenticateToken, requireAdmin, [
+  body('schedule').isArray().withMessage('Schedule deve ser um array'),
+  body('schedule.*.duration_sec').isInt({ min: 1 }).withMessage('Duração inválida')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  try {
+    const gameId = req.params.id;
+    await query('UPDATE games SET blind_schedule = $1 WHERE id = $2', [JSON.stringify(req.body.schedule), gameId]);
+    res.json({ message: 'Schedule atualizado' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao atualizar schedule' });
+  }
+});

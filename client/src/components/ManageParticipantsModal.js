@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, UserPlus, UserMinus, Users, Search, Save, Check, AlertCircle } from 'lucide-react';
 import './ManageParticipantsModal.css';
 
@@ -108,13 +108,7 @@ const ManageParticipantsModal = ({ isOpen, onClose, game, onUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchAvailableUsers();
-    }
-  }, [isOpen]);
-
-  const fetchAvailableUsers = async () => {
+  const fetchAvailableUsers = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/users', {
@@ -122,10 +116,8 @@ const ManageParticipantsModal = ({ isOpen, onClose, game, onUpdate }) => {
           'Authorization': `Bearer ${token}`
         }
       });
-      
       if (response.ok) {
         const users = await response.json();
-        // Filtrar usuários que não são admin e não estão no jogo
         const participantIds = game.participants?.map(p => p.user_id) || [];
         const filtered = users.filter(user => 
           user.role !== 'admin' && !participantIds.includes(user.id)
@@ -136,7 +128,13 @@ const ManageParticipantsModal = ({ isOpen, onClose, game, onUpdate }) => {
       console.error('Erro ao buscar usuários:', error);
       setError('Erro ao carregar usuários disponíveis');
     }
-  };
+  }, [game]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchAvailableUsers();
+    }
+  }, [isOpen, fetchAvailableUsers]);
 
   const handleAddParticipant = async (userId) => {
     setLoading(true);

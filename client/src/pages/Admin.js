@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Settings, 
@@ -10,20 +11,21 @@ import {
   ShieldOff, 
   Search,
   Filter,
-  MoreVertical,
   Crown,
   User,
-  Mail,
   Calendar,
   Trophy,
   Target,
-  DollarSign
+  DollarSign,
+  Timer
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './Admin.css';
+import TimerSettings from './TimerSettings';
 
 const Admin = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
@@ -46,6 +48,7 @@ const Admin = () => {
     club_description: '',
     default_buy_in: ''
   });
+  const [initialSelectedGameId, setInitialSelectedGameId] = useState('');
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -53,6 +56,18 @@ const Admin = () => {
       fetchClubInfo();
     }
   }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    const gameId = params.get('gameId');
+    if (tab === 'timer') {
+      setActiveTab('timer');
+    }
+    if (gameId) {
+      setInitialSelectedGameId(gameId);
+    }
+  }, [location.search]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -98,6 +113,7 @@ const Admin = () => {
       console.error('Erro ao buscar informações do clube:', error);
     }
   };
+
 
   const handleUserSubmit = async (e) => {
     e.preventDefault();
@@ -299,6 +315,13 @@ const Admin = () => {
           <Settings size={20} />
           Clube
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'timer' ? 'active' : ''}`}
+          onClick={() => setActiveTab('timer')}
+        >
+          <Timer size={20} />
+          Timer
+        </button>
       </div>
 
       {activeTab === 'users' && (
@@ -441,6 +464,12 @@ const Admin = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'timer' && (
+        <div className="timer-section">
+          <TimerSettings initialSelectedGameId={initialSelectedGameId} />
         </div>
       )}
 

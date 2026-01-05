@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { 
   Trophy, 
@@ -9,8 +9,6 @@ import {
   Target,
   Award,
   Calendar,
-  Filter,
-  BarChart3,
   Star
 } from 'lucide-react';
 import './Ranking.css';
@@ -25,20 +23,13 @@ function Ranking() {
   const [category, setCategory] = useState('points');
   const [categoriesData, setCategoriesData] = useState(null);
 
-  useEffect(() => {
-    fetchRankingData();
-  }, [period, category]);
-
-  const fetchRankingData = async () => {
+  const fetchRankingData = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // Fetch general ranking
       const rankingParams = new URLSearchParams();
       if (period !== 'all') {
         rankingParams.append('period', period);
       }
-      
       const requests = [
         axios.get(`/api/ranking?${rankingParams.toString()}`),
         axios.get('/api/club/best-hands'),
@@ -48,7 +39,6 @@ function Ranking() {
         requests.push(axios.get('/api/ranking/categories'));
       }
       const responses = await Promise.all(requests);
-      
       setRankings(responses[0].data);
       setBestHands(responses[1].data);
       const handStats = responses[2].data;
@@ -73,7 +63,12 @@ function Ranking() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period, category]);
+
+  useEffect(() => {
+    fetchRankingData();
+  }, [fetchRankingData]);
+
 
   const getRankIcon = (position) => {
     switch (position) {

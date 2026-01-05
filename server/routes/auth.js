@@ -36,9 +36,8 @@ router.post('/register', [
   }
 });
 
-// Login
 router.post('/login', [
-  body('email').isEmail().withMessage('Email inválido'),
+  body('username').isLength({ min: 3 }).withMessage('Username inválido'),
   body('password').notEmpty().withMessage('Senha é obrigatória')
 ], async (req, res) => {
   try {
@@ -46,8 +45,8 @@ router.post('/login', [
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    const { email, password } = req.body;
-    const user = await getOne('SELECT * FROM users WHERE email = $1', [email]);
+    const { username, password } = req.body;
+    const user = await getOne('SELECT * FROM users WHERE username = $1', [username]);
     if (!user) {
       return res.status(400).json({ message: 'Credenciais inválidas' });
     }

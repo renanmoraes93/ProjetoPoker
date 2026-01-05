@@ -11,8 +11,7 @@ import {
   Crown,
   Clock,
   DollarSign,
-  Target,
-  Award
+  Target
 } from 'lucide-react';
 import './Dashboard.css';
 
@@ -230,7 +229,7 @@ function Dashboard() {
           <div className="players-list">
             {dashboardData?.topPlayers?.length > 0 ? (
               dashboardData.topPlayers.map((player, index) => (
-                <div key={player.id} className="player-card">
+                <div key={player.id ?? `${player.username}-${index}`} className="player-card">
                   <div className="player-rank">
                     {index + 1}
                   </div>

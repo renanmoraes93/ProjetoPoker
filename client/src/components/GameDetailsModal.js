@@ -14,7 +14,8 @@ import {
   UserPlus,
   UserMinus,
   Trophy,
-  X
+  X,
+  Timer as TimerIcon
 } from 'lucide-react';
 import './GameDetailsModal.css';
 
@@ -30,7 +31,8 @@ const GameDetailsModal = ({
   onStart,
   onFinish,
   onManage,
-  onEditPositions
+  onEditPositions,
+  onOpenTimer
 }) => {
   if (!isOpen || !game) return null;
 
@@ -72,10 +74,12 @@ const GameDetailsModal = ({
                   !isUserInGame;
   const canLeave = game.status === 'scheduled' && isUserInGame;
   const calculateTotalSpent = (participant) => {
-    const buyIn = game.buy_in || 0;
-    const rebuysCost = (participant.rebuys || 0) * (game.rebuy_value || 0);
-    const addonsCost = (participant.addons || 0) * (game.addon_value || 0);
-    return buyIn + rebuysCost + addonsCost;
+    const buyIn = parseFloat(game.buy_in || 0) || 0;
+    const rebuysUnit = parseFloat(game.rebuy_value || 0) || 0;
+    const addonsUnit = parseFloat(game.addon_value || 0) || 0;
+    const rebuysCount = parseInt(participant.rebuys || 0) || 0;
+    const addonsCount = parseInt(participant.addons || 0) || 0;
+    return buyIn + (rebuysCount * rebuysUnit) + (addonsCount * addonsUnit);
   };
 
   const statusInfo = getStatusInfo(game.status);
@@ -181,6 +185,10 @@ const GameDetailsModal = ({
                 Sair do Jogo
               </button>
             )}
+            <button className="action-button" onClick={() => onOpenTimer(game)}>
+              <TimerIcon size={18} />
+              Timer
+            </button>
           </div>
 
           {user?.role === 'admin' && (

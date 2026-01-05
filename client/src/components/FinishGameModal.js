@@ -10,8 +10,7 @@ function FinishGameModal({ isOpen, onClose, game, onFinish }) {
 
   useEffect(() => {
     if (isOpen && game) {
-      // Inicializar resultados com participantes
-      const initialResults = game.participants.map((participant, index) => ({
+      const initialResults = game.participants.map((participant) => ({
         user_id: participant.user_id,
         username: participant.username,
         avatar: participant.avatar,
@@ -21,15 +20,31 @@ function FinishGameModal({ isOpen, onClose, game, onFinish }) {
       }));
       setResults(initialResults);
 
-      // Calcular prize pool total (buy-ins + rebuys + addons)
-      const totalBuyIns = (game.buy_in || 0) * game.participants.length;
-      const totalRebuys = game.participants.reduce((sum, p) => sum + ((p.rebuys || 0) * (game.rebuy_value || 0)), 0);
-      const totalAddons = game.participants.reduce((sum, p) => sum + ((p.addons || 0) * (game.addon_value || 0)), 0);
-      
+      const buyIn = parseFloat(game.buy_in ?? 0) || 0;
+      const rebuyValue = parseFloat(game.rebuy_value ?? 0) || 0;
+      const addonValue = parseFloat(game.addon_value ?? 0) || 0;
+      const participantsCount = Array.isArray(game.participants) ? game.participants.length : 0;
+      const totalBuyIns = buyIn * participantsCount;
+      const totalRebuys = game.participants.reduce((sum, p) => {
+        const count = parseInt(p.rebuys ?? 0, 10) || 0;
+        return sum + count * rebuyValue;
+      }, 0);
+      const totalAddons = game.participants.reduce((sum, p) => {
+        const count = parseInt(p.addons ?? 0, 10) || 0;
+        return sum + count * addonValue;
+      }, 0);
+
       setPrizePool(totalBuyIns + totalRebuys + totalAddons);
       setErrors({});
     }
   }, [isOpen, game]);
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(parseFloat(value || 0) || 0);
+  };
 
   // Calcular pontos baseado na posição
   const calculatePoints = (position, totalPlayers) => {
@@ -170,7 +185,7 @@ function FinishGameModal({ isOpen, onClose, game, onFinish }) {
             <h3>{game?.name}</h3>
             <div className="game-details">
               <span><Users size={16} /> {game?.participants?.length} jogadores</span>
-              <span><Calculator size={16} /> Buy-in: R$ {game?.buy_in?.toFixed(2)}</span>
+              <span><Calculator size={16} /> Buy-in: {formatCurrency(parseFloat(game?.buy_in ?? 0) || 0)}</span>
             </div>
           </div>
 

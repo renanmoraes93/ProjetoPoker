@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { 
@@ -50,11 +50,7 @@ function BestHands() {
     'High Card'
   ];
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const requests = [
@@ -67,7 +63,6 @@ function BestHands() {
         requests.push(axios.get('/api/users'));
       }
       const responses = await Promise.all(requests);
-      
       setHands(responses[0].data);
       setStats(responses[1].data);
       setGames(responses[2].data);
@@ -80,7 +75,12 @@ function BestHands() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
 
   const handleCreateHand = async (e) => {
     e.preventDefault();

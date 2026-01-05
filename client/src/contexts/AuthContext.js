@@ -16,6 +16,22 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Configurar baseURL do axios de forma dinâmica
+  useEffect(() => {
+    const base = process.env.REACT_APP_API_URL || '';
+    if (base) {
+      axios.defaults.baseURL = base;
+      try { console.debug(`Axios baseURL: ${base}`); } catch (_) {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (process.env.REACT_APP_AUTH_BYPASS === 'true') {
+      setUser({ id: 0, username: 'dev', email: 'dev@example.com', role: 'admin' });
+      setLoading(false);
+    }
+  }, []);
+
   // Configurar interceptor do axios para incluir token
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -23,8 +39,20 @@ export function AuthProvider({ children }) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
 
+    const reqInterceptor = axios.interceptors.request.use((config) => {
+      try {
+        const t = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        if (t) {
+          config.headers = config.headers || {};
+          config.headers['Authorization'] = `Bearer ${t}`;
+          console.debug('AuthInterceptor: Authorization attached');
+        }
+      } catch (_) {}
+      return config;
+    });
+
     // Interceptor para lidar com erros de autenticação
-    const interceptor = axios.interceptors.response.use(
+    const resInterceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
@@ -36,12 +64,16 @@ export function AuthProvider({ children }) {
     );
 
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      axios.interceptors.response.eject(resInterceptor);
+      axios.interceptors.request.eject(reqInterceptor);
     };
   }, []);
 
   // Verificar se há um token válido ao carregar a aplicação
   useEffect(() => {
+    if (process.env.REACT_APP_AUTH_BYPASS === 'true') {
+      return; // em modo bypass não verificamos token
+    }
     const token = localStorage.getItem('token');
     if (token) {
       verifyToken();
@@ -63,12 +95,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const login = async (email, password) => {
+  const login = async (username, password) => {
     try {
-      const response = await axios.post('/api/auth/login', {
-        email,
-        password
-      });
+      const response = await axios.post('/api/auth/login', { username, password });
 
       const { token, user: userData } = response.data;
       

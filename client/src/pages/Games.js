@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { 
@@ -8,22 +8,17 @@ import {
   Clock, 
   Trophy, 
   Plus,
-  Edit,
-  Trash2,
-  UserPlus,
-  UserMinus,
   Search,
   CheckCircle,
   XCircle,
-  AlertCircle,
-  Play,
-  Settings
+  AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FinishGameModal from '../components/FinishGameModal';
 import ManageParticipantsModal from '../components/ManageParticipantsModal';
 import EditPositionsModal from '../components/EditPositionsModal';
 import GameDetailsModal from '../components/GameDetailsModal';
+import TimerModal from '../components/TimerModal';
 import './Games.css';
 
 function Games() {
@@ -40,6 +35,7 @@ function Games() {
   const [showManageParticipantsModal, setShowManageParticipantsModal] = useState(false);
   const [showEditPositionsModal, setShowEditPositionsModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showTimerModal, setShowTimerModal] = useState(false);
   
   // Selected items state
   const [editingGame, setEditingGame] = useState(null);
@@ -47,6 +43,7 @@ function Games() {
   const [managingGame, setManagingGame] = useState(null);
   const [editingPositionsGame, setEditingPositionsGame] = useState(null);
   const [selectedGame, setSelectedGame] = useState(null);
+  const [timerGame, setTimerGame] = useState(null);
 
   const [newGame, setNewGame] = useState({
     name: '',
@@ -67,9 +64,26 @@ function Games() {
     prize_structure: ''
   });
 
+  const fetchGames = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (filter !== 'all') {
+        params.append('status', filter);
+      }
+      const response = await axios.get(`/api/games?${params.toString()}`);
+      setGames(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar jogos:', error);
+      toast.error('Erro ao carregar jogos');
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
   useEffect(() => {
     fetchGames();
-  }, [filter]);
+  }, [fetchGames]);
 
   // Update selectedGame and other modal states when games list changes
   useEffect(() => {
@@ -91,25 +105,8 @@ function Games() {
         setEditingPositionsGame(updatedGame);
       }
     }
-  }, [games]);
+  }, [games, selectedGame, managingGame, editingPositionsGame]);
 
-  const fetchGames = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (filter !== 'all') {
-        params.append('status', filter);
-      }
-      
-      const response = await axios.get(`/api/games?${params.toString()}`);
-      setGames(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar jogos:', error);
-      toast.error('Erro ao carregar jogos');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCreateGame = async (e) => {
     e.preventDefault();
@@ -218,7 +215,15 @@ function Games() {
   const handleEditGame = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`/api/games/${editingGame.id}`, editGame);
+      const payload = {
+        name: editGame.name,
+        date: editGame.date,
+        buy_in: editGame.buy_in !== '' ? parseFloat(editGame.buy_in) : undefined,
+        rebuy_value: editGame.rebuy_value !== '' ? parseFloat(editGame.rebuy_value) : undefined,
+        addon_value: editGame.addon_value !== '' ? parseFloat(editGame.addon_value) : undefined,
+        max_players: editGame.max_players !== '' ? parseInt(editGame.max_players, 10) : undefined
+      };
+      await axios.put(`/api/games/${editingGame.id}`, payload);
       toast.success('Jogo editado com sucesso!');
       setShowEditModal(false);
       setEditingGame(null);
@@ -261,10 +266,10 @@ function Games() {
     setEditGame({
       name: game.name,
       date: new Date(game.date).toISOString().slice(0, 16),
-      buy_in: game.buy_in,
-      rebuy_value: game.rebuy_value,
-      addon_value: game.addon_value,
-      max_players: game.max_players
+      buy_in: game.buy_in ?? '',
+      rebuy_value: game.rebuy_value ?? '',
+      addon_value: game.addon_value ?? '',
+      max_players: game.max_players ?? ''
     });
     setShowDetailsModal(false);
     setShowEditModal(true);
@@ -280,6 +285,11 @@ function Games() {
     setEditingPositionsGame(game);
     setShowDetailsModal(false);
     setShowEditPositionsModal(true);
+  };
+
+  const openTimerModal = (game) => {
+    setTimerGame(game);
+    setShowTimerModal(true);
   };
 
   const handleUpdateParticipantStats = async (gameId, userId, stats) => {
@@ -461,6 +471,15 @@ function Games() {
                   <Users className="detail-icon" />
                   <span>{game.participants?.length || 0}/{game.max_players}</span>
                 </div>
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' }}
+                    onClick={(e) => { e.stopPropagation(); openTimerModal(game); }}
+                  >
+                    <Clock size={16} />
+                    Timer
+                  </button>
+                </div>
               </div>
             </div>
           ))
@@ -603,6 +622,26 @@ function Games() {
               </div>
               <div className="form-row">
                 <div className="form-group">
+                  <label>Valor Rebuy (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editGame.rebuy_value}
+                    onChange={(e) => setEditGame({...editGame, rebuy_value: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Valor Add-on (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editGame.addon_value}
+                    onChange={(e) => setEditGame({...editGame, addon_value: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
                   <label>Máximo de Jogadores</label>
                   <input
                     type="number"
@@ -666,8 +705,18 @@ function Games() {
         onFinish={() => handleFinishGame(selectedGame?.id)}
         onManage={() => openManageParticipantsModal(selectedGame)}
         onEditPositions={() => openEditPositionsModal(selectedGame)}
+        onOpenTimer={() => openTimerModal(selectedGame)}
         onUpdateParticipantStats={handleUpdateParticipantStats}
       />
+
+      {showTimerModal && timerGame && (
+        <TimerModal
+          isOpen={showTimerModal}
+          onClose={() => setShowTimerModal(false)}
+          game={timerGame}
+          user={user}
+        />
+      )}
     </div>
   );
 }

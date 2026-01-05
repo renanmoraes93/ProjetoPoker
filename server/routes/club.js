@@ -19,18 +19,48 @@ router.get('/info', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/timer/presets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const row = await getOne('SELECT setting_value FROM club_settings WHERE setting_key = $1', ['blind_presets']);
+    const presets = row && row.setting_value ? JSON.parse(row.setting_value) : [];
+    res.json({ presets });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao buscar presets de timer' });
+  }
+});
+
+router.put('/timer/presets', authenticateToken, requireAdmin, [
+  body('presets').isArray().withMessage('Presets deve ser um array'),
+  body('presets.*.name').isLength({ min: 1 }).withMessage('Preset sem nome'),
+  body('presets.*.levels').isArray({ min: 1 }).withMessage('Levels inválidos'),
+  body('presets.*.levels.*.duration_sec').isInt({ min: 1 }).withMessage('Duração inválida')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  try {
+    const value = JSON.stringify(req.body.presets);
+    await query('INSERT INTO club_settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()', ['blind_presets', value]);
+    res.json({ message: 'Presets atualizados' });
+  } catch (e) {
+    res.status(500).json({ message: 'Erro ao atualizar presets' });
+  }
+});
+
 // Atualizar configurações do clube (apenas admin)
 router.put('/settings', authenticateToken, requireAdmin, [
   body('club_name').optional().isLength({ min: 3 }).withMessage('Nome do clube deve ter pelo menos 3 caracteres'),
   body('club_description').optional().isLength({ max: 500 }).withMessage('Descrição muito longa'),
-  body('default_buy_in').optional().isFloat({ min: 0 }).withMessage('Buy-in padrão inválido')
+  body('default_buy_in').optional().isFloat({ min: 0 }).withMessage('Buy-in padrão inválido'),
+  body('auth_bypass').optional().isBoolean().withMessage('auth_bypass deve ser booleano')
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
   const updates = req.body;
-  const validSettings = ['club_name', 'club_description', 'points_system', 'default_buy_in'];
+  const validSettings = ['club_name', 'club_description', 'points_system', 'default_buy_in', 'auth_bypass'];
   try {
     const keys = Object.keys(updates).filter((k) => validSettings.includes(k));
     if (keys.length === 0) {
@@ -38,7 +68,8 @@ router.put('/settings', authenticateToken, requireAdmin, [
     }
     await transaction(async (client) => {
       for (const key of keys) {
-        await client.query('UPDATE club_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2', [updates[key], key]);
+        const val = key === 'auth_bypass' ? (updates[key] ? 'true' : 'false') : updates[key];
+        await client.query('INSERT INTO club_settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()', [key, val]);
       }
     });
     res.json({ message: 'Configurações atualizadas com sucesso' });

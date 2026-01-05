@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # Banco de dados Postgres local para desenvolvimento
+  postgres:
+    image: postgres:15-alpine
+    container_name: gorila-poker-postgres-dev
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=poker_dev
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   # Backend em desenvolvimento
   poker-backend:
     build:
@@ -13,14 +32,18 @@ services:
       - NODE_ENV=development
       - PORT=5000
       - JWT_SECRET=dev-secret-key
+      - AUTH_BYPASS=true
+      - AUTH_BYPASS_ROLE=admin
+      - PGSSL=disable
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/poker_dev
     volumes:
       # Hot reload para o backend
       - ./server:/app
       - /app/node_modules
-      # Persistir banco de dados
-      - poker_dev_data:/app/data
     restart: unless-stopped
     command: npm run dev
+    depends_on:
+      - postgres
 
   # Frontend em desenvolvimento
   poker-frontend:
@@ -32,6 +55,7 @@ services:
       - "3000:3000"
     environment:
       - REACT_APP_API_URL=http://localhost:5000
+      - REACT_APP_AUTH_BYPASS=true
       - CHOKIDAR_USEPOLLING=true
     volumes:
       # Hot reload para o frontend
@@ -43,7 +67,7 @@ services:
       - poker-backend
 
 volumes:
-  poker_dev_data:
+  postgres_dev_data:
     driver: local
 
 networks:

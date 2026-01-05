@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Mail, Calendar, Trophy, Target, TrendingUp, Edit2, Save, X, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -25,6 +25,22 @@ const Profile = () => {
     confirmPassword: ''
   });
 
+  const fetchUserStats = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/users/${user.id}/stats`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas:', error);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       setFormData({
@@ -33,24 +49,8 @@ const Profile = () => {
       });
       fetchUserStats();
     }
-  }, [user]);
+  }, [user, fetchUserStats]);
 
-  const fetchUserStats = async () => {
-    try {
-      const response = await fetch(`/api/users/${user.id}/stats`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar estatísticas:', error);
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
