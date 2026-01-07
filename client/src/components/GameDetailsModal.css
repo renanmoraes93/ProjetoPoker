@@ -324,3 +324,28 @@
   .info-grid { grid-template-columns: 1fr; }
   .admin-buttons-grid { grid-template-columns: 1fr 1fr; }
 }
+
+@media (max-width: 500px) {
+  .game-details-modal {
+    width: 100%;
+    max-width: none;
+    border-radius: 10px;
+  }
+  .modal-header-section {
+    padding: 1.25rem;
+  }
+  .modal-body-section {
+    padding: 0.75rem;
+  }
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  .player-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .admin-buttons-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}

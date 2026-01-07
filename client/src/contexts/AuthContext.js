@@ -97,7 +97,8 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     try {
-      const response = await axios.post('/api/auth/login', { username, password });
+      const payload = username && username.includes('@') ? { email: username, password } : { username, password };
+      const response = await axios.post('/api/auth/login', payload);
 
       const { token, user: userData } = response.data;
       

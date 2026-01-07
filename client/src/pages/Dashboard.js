@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { 
@@ -17,6 +17,7 @@ import './Dashboard.css';
 
 function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,11 +46,23 @@ function Dashboard() {
     }).format(value || 0);
   };
 
+  const parseDateTime = (dateString) => {
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      const [datePart, timePart] = dateString.split('T');
+      const [y, m, d] = datePart.split('-').map(Number);
+      const [hh, mm] = timePart.split(':');
+      return new Date(y, m - 1, d, parseInt(hh || '0', 10), parseInt(mm || '0', 10));
+    }
+    return new Date(dateString);
+  };
+
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    return parseDateTime(dateString).toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric'
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -185,7 +198,11 @@ function Dashboard() {
           <div className="games-list">
             {dashboardData?.upcomingGames?.length > 0 ? (
               dashboardData.upcomingGames.map((game) => (
-                <div key={game.id} className="game-card">
+                <div
+                  key={game.id}
+                  className="game-card"
+                  onClick={() => navigate(`/games?gameId=${game.id}`)}
+                >
                   <div className="game-info">
                     <h4>{game.name}</h4>
                     <div className="game-details">

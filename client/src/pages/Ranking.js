@@ -9,7 +9,8 @@ import {
   Target,
   Award,
   Calendar,
-  Star
+  Star,
+  Share2
 } from 'lucide-react';
 import './Ranking.css';
 
@@ -135,6 +136,45 @@ function Ranking() {
     return labels[cat] || cat;
   };
 
+  const isWindows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+  const WA = isWindows ? {
+    trophy: '🏆',
+    medal1: '#1',
+    medal2: '#2',
+    medal3: '#3',
+    star: '⭐',
+    chart: '📈',
+    target: '🎯',
+    users: '👥',
+    link: '🔗'
+  } : {
+    trophy: '🏆',
+    medal1: '🥇',
+    medal2: '🥈',
+    medal3: '🥉',
+    star: '⭐',
+    chart: '📈',
+    target: '🎯',
+    users: '👥',
+    link: '🔗'
+  };
+
+  const sanitizeForWhatsApp = (text) => {
+    const cleaned = text
+      .replace(/[\uFE0F\u200D\u200B\u200C\u200E\u200F\u202A-\u202E]/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[—–]/g, '-');
+    return cleaned
+      .split('')
+      .filter((c) => {
+        const code = c.charCodeAt(0);
+        return c === '\n' || (code >= 32 && code !== 127);
+      })
+      .join('')
+      .trim();
+  };
+
   const getCategoryValue = (player, cat) => {
     switch (cat) {
       case 'points':
@@ -152,6 +192,47 @@ function Ranking() {
       default:
         return player.total_points;
     }
+  };
+
+  const handleShareRanking = () => {
+    const periodLabel = {
+      all: 'Todos os tempos',
+      week: 'Última semana',
+      month: 'Último mês',
+      year: 'Último ano'
+    }[period] || 'Todos os tempos';
+    const dataList = category === 'points'
+      ? rankings
+      : (categoriesData ? (
+        category === 'wins' ? categoriesData.mostWins :
+        category === 'win_rate' ? categoriesData.bestWinRate :
+        category === 'games' ? categoriesData.mostGames :
+        category === 'avg_points' ? categoriesData.bestAverage : []
+      ) : []);
+    const top = (dataList || []).slice(0, 10);
+    const lines = top.map((p, i) => {
+      const posEmoji = i === 0 ? WA.medal1 : i === 1 ? WA.medal2 : i === 2 ? WA.medal3 : `#${i + 1}`;
+      const valueText = getCategoryValue(p, category);
+      const gamesText = category === 'points' ? (p.games_played || 0) : (category === 'games' ? (p.value || 0) : '-');
+      const winsText = category === 'points' ? (p.wins || 0) : (category === 'wins' ? (p.value || 0) : '-');
+      const rateText = category === 'points'
+        ? formatPercentage(p.win_rate || 0)
+        : (category === 'win_rate' ? `${(p.value || 0).toFixed(1)}%` : '-');
+      return `${posEmoji} ${p.username} • ${valueText} • Jogos: ${gamesText} • Vitórias: ${winsText} • Taxa: ${rateText}`;
+    });
+    const raw = [
+      `${WA.trophy} Ranking do Gorila'z Poker Club`,
+      `${WA.star} Período: ${periodLabel}`,
+      `${WA.chart} Categoria: ${getCategoryLabel(category)}`,
+      `Jogadores listados: ${top.length}`,
+      '',
+      ...lines,
+      '',
+      `${WA.link} https://gorilazpoker.online/ranking`
+    ].join('\n');
+    const message = sanitizeForWhatsApp(raw);
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
 
   if (loading) {
@@ -174,6 +255,10 @@ function Ranking() {
           </h1>
           <p>Classificações e estatísticas dos jogadores do Gorila'z Poker Club</p>
         </div>
+        <button className="share-btn" onClick={handleShareRanking}>
+          <Share2 size={20} />
+          Compartilhar Ranking
+        </button>
       </div>
 
       {/* Stats Overview */}

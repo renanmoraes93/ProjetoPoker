@@ -37,16 +37,28 @@ router.post('/register', [
 });
 
 router.post('/login', [
-  body('username').isLength({ min: 3 }).withMessage('Username inválido'),
-  body('password').notEmpty().withMessage('Senha é obrigatória')
+  body('username').optional().isLength({ min: 3 }).withMessage('Username inválido'),
+  body('email').optional().isEmail().withMessage('Email inválido'),
+  body('password').notEmpty().withMessage('Senha é obrigatória'),
+  body().custom((value) => {
+    if (!value.username && !value.email) {
+      throw new Error('Informe username ou email');
+    }
+    return true;
+  })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    const { username, password } = req.body;
-    const user = await getOne('SELECT * FROM users WHERE username = $1', [username]);
+    const { username, email, password } = req.body;
+    let user;
+    if (email) {
+      user = await getOne('SELECT * FROM users WHERE email = $1', [email]);
+    } else {
+      user = await getOne('SELECT * FROM users WHERE username = $1', [username]);
+    }
     if (!user) {
       return res.status(400).json({ message: 'Credenciais inválidas' });
     }

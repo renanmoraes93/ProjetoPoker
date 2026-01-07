@@ -35,9 +35,7 @@ function Login() {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.username) {
-      newErrors.username = 'Usuário é obrigatório';
-    } else if (formData.username.length < 3) {
-      newErrors.username = 'Usuário deve ter ao menos 3 caracteres';
+      newErrors.username = 'Usuário ou Email é obrigatório';
     }
     if (!formData.password) {
       newErrors.password = 'Senha é obrigatória';
@@ -95,16 +93,16 @@ function Login() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">
-              <label htmlFor="username">Usuário</label>
+              <label htmlFor="username">Usuário ou Email</label>
               <div className="input-wrapper">
-                <User className="input-icon" size={20} />
+                <User className="input-icon" size={18} />
                 <input
                   type="text"
                   id="username"
                   name="username"
                   value={formData.username}
                   onChange={handleChange}
-                  placeholder="seu usuário"
+                  placeholder="seu usuário ou email"
                   className={errors.username ? 'error' : ''}
                 />
               </div>
@@ -114,7 +112,7 @@ function Login() {
             <div className="form-group">
               <label htmlFor="password">Senha</label>
               <div className="input-wrapper">
-                <Lock className="input-icon" size={20} />
+                <Lock className="input-icon" size={18} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   id="password"
@@ -129,7 +127,7 @@ function Login() {
                   className="password-toggle"
                   onClick={() => setShowPassword(!showPassword)}
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
               {errors.password && <span className="error-message">{errors.password}</span>}

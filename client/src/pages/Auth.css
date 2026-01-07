@@ -153,7 +153,7 @@
 
 .input-wrapper input {
   width: 100%;
-  padding: 1rem 1rem 1rem 3rem;
+  padding: 1rem 3.5rem 1rem 4.75rem;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -161,6 +161,7 @@
   font-size: 1rem;
   transition: all 0.3s ease;
   outline: none;
+  text-align: center;
 }
 
 .input-wrapper input::placeholder {
@@ -180,7 +181,7 @@
 
 .password-toggle {
   position: absolute;
-  right: 1rem;
+  right: 0.75rem;
   background: none;
   border: none;
   color: #64748b;
@@ -318,15 +319,15 @@
   }
   
   .input-wrapper input {
-    padding: 0.875rem 0.875rem 0.875rem 2.75rem;
+    padding: 0.875rem 3rem 0.875rem 4.75rem;
   }
   
   .input-icon {
-    left: 0.875rem;
+    left: 0.75rem;
   }
   
   .password-toggle {
-    right: 0.875rem;
+    right: 0.75rem;
   }
 }
 

@@ -5,6 +5,13 @@ const connectionString = process.env.DATABASE_URL;
 const ssl = process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false };
 const pool = new Pool({ connectionString, ssl });
 
+// Garantir timezone por conexão do pool
+try {
+  pool.on('connect', async (client) => {
+    try { await client.query(`SET TIME ZONE 'America/Sao_Paulo'`); } catch (_) {}
+  });
+} catch (_) {}
+
 class Database {
   constructor() {
     this.pool = pool;
@@ -14,7 +21,10 @@ class Database {
   async init() {
     await this.initTables();
     try { await this.runMigrations(); } catch (_) {}
+    try { await pool.query(`SET TIME ZONE 'America/Sao_Paulo'`); } catch (_) {}
   }
+
+// Garantir timezone por conexão do pool
 
   async initTables() {
     await pool.query(`
@@ -37,7 +47,8 @@ class Database {
       CREATE TABLE IF NOT EXISTS games (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
-        date DATE NOT NULL,
+        date TIMESTAMPTZ NOT NULL,
+        start_time TIME,
         buy_in NUMERIC(10,2) NOT NULL,
         prize_pool NUMERIC(10,2),
         status VARCHAR(20) DEFAULT 'scheduled',
@@ -133,6 +144,15 @@ class Database {
     await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMP`);
     await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_paused_at TIMESTAMP`);
     await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS timer_total_paused_seconds INTEGER DEFAULT 0`);
+    try {
+      await pool.query(`ALTER TABLE games ALTER COLUMN date TYPE TIMESTAMP USING date::timestamp`);
+    } catch (_) {}
+    try {
+      await pool.query(`ALTER TABLE games ALTER COLUMN date TYPE TIMESTAMPTZ USING date::timestamptz`);
+    } catch (_) {}
+    try {
+      await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS start_time TIME`);
+    } catch (_) {}
 
     const defaultSchedule = JSON.stringify([
       { level: 1, sb: 10, bb: 20, ante: 0, duration_sec: 600 },

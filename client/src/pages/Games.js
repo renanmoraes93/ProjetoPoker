@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { 
@@ -23,6 +24,7 @@ import './Games.css';
 
 function Games() {
   const { user } = useAuth();
+  const location = useLocation();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -47,7 +49,8 @@ function Games() {
 
   const [newGame, setNewGame] = useState({
     name: '',
-    date: '',
+    datePart: '',
+    timePart: '',
     buy_in: '',
     rebuy_value: '',
     addon_value: '',
@@ -56,7 +59,8 @@ function Games() {
   
   const [editGame, setEditGame] = useState({
     name: '',
-    date: '',
+    datePart: '',
+    timePart: '',
     buy_in: '',
     rebuy_value: '',
     addon_value: '',
@@ -85,6 +89,26 @@ function Games() {
     fetchGames();
   }, [fetchGames]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const gid = params.get('gameId');
+    if (gid) {
+      const found = games.find(g => String(g.id) === String(gid));
+      if (found) {
+        setSelectedGame(found);
+        setShowDetailsModal(true);
+      } else {
+        (async () => {
+          try {
+            const res = await axios.get(`/api/games/${gid}`);
+            setSelectedGame(res.data);
+            setShowDetailsModal(true);
+          } catch (_) {}
+        })();
+      }
+    }
+  }, [location.search, games]);
+
   // Update selectedGame and other modal states when games list changes
   useEffect(() => {
     if (selectedGame) {
@@ -111,9 +135,10 @@ function Games() {
   const handleCreateGame = async (e) => {
     e.preventDefault();
     try {
+      const dateString = `${newGame.datePart}T${newGame.timePart}`;
       const payload = {
         name: newGame.name,
-        date: newGame.date,
+        date: dateString,
         buy_in: newGame.buy_in,
         rebuy_value: newGame.rebuy_value || 0,
         addon_value: newGame.addon_value || 0,
@@ -124,7 +149,8 @@ function Games() {
       setShowCreateModal(false);
       setNewGame({
         name: '',
-        date: '',
+        datePart: '',
+        timePart: '',
         buy_in: '',
         rebuy_value: '',
         addon_value: '',
@@ -215,9 +241,10 @@ function Games() {
   const handleEditGame = async (e) => {
     e.preventDefault();
     try {
+      const dateString = `${editGame.datePart}T${editGame.timePart}`;
       const payload = {
         name: editGame.name,
-        date: editGame.date,
+        date: dateString,
         buy_in: editGame.buy_in !== '' ? parseFloat(editGame.buy_in) : undefined,
         rebuy_value: editGame.rebuy_value !== '' ? parseFloat(editGame.rebuy_value) : undefined,
         addon_value: editGame.addon_value !== '' ? parseFloat(editGame.addon_value) : undefined,
@@ -230,7 +257,8 @@ function Games() {
       setEditGame({
         name: '',
         description: '',
-        date: '',
+        datePart: '',
+        timePart: '',
         buy_in: '',
         rebuy_value: '',
         addon_value: '',
@@ -263,9 +291,12 @@ function Games() {
 
   const openEditModal = (game) => {
     setEditingGame(game);
+    const dtLocal = formatDateTimeLocal(game.date);
+    const [dPart, tPart] = dtLocal.split('T');
     setEditGame({
       name: game.name,
-      date: new Date(game.date).toISOString().slice(0, 16),
+      datePart: dPart,
+      timePart: tPart,
       buy_in: game.buy_in ?? '',
       rebuy_value: game.rebuy_value ?? '',
       addon_value: game.addon_value ?? '',
@@ -319,14 +350,35 @@ function Games() {
     }).format(value || 0);
   };
 
+  const parseDateTime = (dateString) => {
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      const [datePart, timePart] = dateString.split('T');
+      const [y, m, d] = datePart.split('-').map(Number);
+      const [hh, mm] = timePart.split(':');
+      return new Date(y, m - 1, d, parseInt(hh || '0', 10), parseInt(mm || '0', 10));
+    }
+    return new Date(dateString);
+  };
+
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    return parseDateTime(dateString).toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const formatDateTimeLocal = (dateString) => {
+    const d = parseDateTime(dateString);
+    const pad = (n) => String(n).padStart(2, '0');
+    const y = d.getFullYear();
+    const m = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const h = pad(d.getHours());
+    const min = pad(d.getMinutes());
+    return `${y}-${m}-${day}T${h}:${min}`;
   };
 
   const getStatusIcon = (status) => {
@@ -521,11 +573,11 @@ function Games() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Data e Hora</label>
+                  <label>Data</label>
                   <input
-                    type="datetime-local"
-                    value={newGame.date}
-                    onChange={(e) => setNewGame({...newGame, date: e.target.value})}
+                    type="date"
+                    value={newGame.datePart}
+                    onChange={(e) => setNewGame({...newGame, datePart: e.target.value})}
                     required
                   />
                 </div>
@@ -536,6 +588,17 @@ function Games() {
                     step="0.01"
                     value={newGame.buy_in}
                     onChange={(e) => setNewGame({...newGame, buy_in: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Hora</label>
+                  <input
+                    type="time"
+                    value={newGame.timePart}
+                    onChange={(e) => setNewGame({...newGame, timePart: e.target.value})}
                     required
                   />
                 </div>
@@ -601,11 +664,11 @@ function Games() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Data e Hora</label>
+                  <label>Data</label>
                   <input
-                    type="datetime-local"
-                    value={editGame.date}
-                    onChange={(e) => setEditGame({...editGame, date: e.target.value})}
+                    type="date"
+                    value={editGame.datePart}
+                    onChange={(e) => setEditGame({...editGame, datePart: e.target.value})}
                     required
                   />
                 </div>
@@ -616,6 +679,17 @@ function Games() {
                     step="0.01"
                     value={editGame.buy_in}
                     onChange={(e) => setEditGame({...editGame, buy_in: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Hora</label>
+                  <input
+                    type="time"
+                    value={editGame.timePart}
+                    onChange={(e) => setEditGame({...editGame, timePart: e.target.value})}
                     required
                   />
                 </div>

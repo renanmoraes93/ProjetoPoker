@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -11,7 +11,8 @@ import {
   Menu, 
   X,
   User,
-  Crown
+  Crown,
+  ChevronDown
 } from 'lucide-react';
 import './Navbar.css';
 
@@ -20,6 +21,8 @@ function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
 
   const handleLogout = () => {
     logout();
@@ -33,6 +36,29 @@ function Navbar() {
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
   };
+
+  const toggleUserMenu = () => {
+    setIsUserMenuOpen((prev) => !prev);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (isUserMenuOpen && userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isUserMenuOpen]);
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -88,8 +114,8 @@ function Navbar() {
         </div>
 
         {/* User Menu */}
-        <div className="navbar-user">
-          <div className="user-info">
+        <div className={`navbar-user ${isUserMenuOpen ? 'open' : ''}`} ref={userMenuRef}>
+          <div className="user-info" onClick={toggleUserMenu} aria-expanded={isUserMenuOpen}>
             <div className="user-avatar">
               {user?.avatar ? (
                 <img src={user.avatar} alt={user.username} />
@@ -103,22 +129,21 @@ function Navbar() {
                 {user?.role === 'admin' ? 'Administrador' : 'Jogador'}
               </span>
             </div>
+            <ChevronDown size={16} className="chevron-icon" />
           </div>
 
-          <div className="user-actions">
-            <Link to="/profile" className="user-action">
+          <div className={`user-dropdown ${isUserMenuOpen ? 'open' : ''}`}>
+            <Link to="/profile" className="user-dropdown-item">
               <User size={18} />
               <span>Perfil</span>
             </Link>
-            
             {user?.role === 'admin' && (
-              <Link to="/admin" className="user-action">
+              <Link to="/admin" className="user-dropdown-item">
                 <Settings size={18} />
-                <span>Admin</span>
+                <span>Administração</span>
               </Link>
             )}
-            
-            <button onClick={handleLogout} className="user-action logout">
+            <button onClick={handleLogout} className="user-dropdown-item logout">
               <LogOut size={18} />
               <span>Sair</span>
             </button>

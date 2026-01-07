@@ -529,9 +529,16 @@
     gap: 1.5rem;
   }
   
+  .game-card {
+    text-align: center;
+  }
   .game-header {
     flex-direction: column;
     gap: 1rem;
+    align-items: center;
+  }
+  .game-title {
+    text-align: center;
   }
   
   .game-actions {
@@ -550,6 +557,7 @@
   .game-footer {
     justify-content: center;
   }
+
   
   .form-row {
     grid-template-columns: 1fr;
@@ -591,5 +599,19 @@
   .participants {
     flex-direction: column;
     gap: 0.25rem;
+  }
+}
+
+@media (max-width: 500px) {
+  .modal {
+    width: 95%;
+    margin: 0.75rem;
+    border-radius: 12px;
+  }
+  .modal-header {
+    padding: 1rem 1.25rem;
+  }
+  .game-form {
+    padding: 1.25rem;
   }
 }

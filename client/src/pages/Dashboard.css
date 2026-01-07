@@ -642,14 +642,16 @@
   .recent-game,
   .hand-card {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.75rem;
+    text-align: center;
   }
   
   .game-participants,
   .player-stats,
   .hand-game {
-    align-self: flex-end;
+    align-self: center;
+    justify-content: center;
   }
 }
 

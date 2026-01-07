@@ -12,7 +12,8 @@ import {
   Search,
   Filter,
   Award,
-  Target
+  Target,
+  Share2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './BestHands.css';
@@ -180,6 +181,62 @@ function BestHands() {
     return matchesSearch && matchesFilter;
   });
 
+  const isWindows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+  const WA = isWindows ? {
+    trophy: '🏆',
+    star: '⭐',
+    medal1: '#1',
+    medal2: '#2',
+    medal3: '#3',
+    users: '👥',
+    link: '🔗'
+  } : {
+    trophy: '🏆',
+    star: '⭐',
+    medal1: '🥇',
+    medal2: '🥈',
+    medal3: '🥉',
+    users: '👥',
+    link: '🔗'
+  };
+
+  const sanitizeForWhatsApp = (text) => {
+    const cleaned = text
+      .replace(/[\uFE0F\u200D\u200B\u200C\u200E\u200F\u202A-\u202E]/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[—–]/g, '-');
+    return cleaned
+      .split('')
+      .filter((c) => {
+        const code = c.charCodeAt(0);
+        return c === '\n' || (code >= 32 && code !== 127);
+      })
+      .join('')
+      .trim();
+  };
+
+  const handleShareBestHands = () => {
+    const top = filteredHands.slice(0, 5);
+    const lines = top.map((h, i) => {
+      const dateText = formatDate(h.date);
+      const posEmoji = i === 0 ? WA.medal1 : i === 1 ? WA.medal2 : i === 2 ? WA.medal3 : `#${i + 1}`;
+      return `${posEmoji} ${h.hand_type} • Cartas: ${h.cards} • Jogador: ${h.username} • Jogo: ${h.game_name} • Data: ${dateText}`;
+    });
+    const statsLine = stats ? `${WA.star} Total de mãos: ${stats.total_hands} • ${WA.users} Jogadores únicos: ${stats.unique_players}` : '';
+    const raw = [
+      `${WA.trophy} Melhores Mãos do Gorilaz Poker Club`,
+      statsLine,
+      '',
+      ...lines,
+      '',
+      `${WA.link} https://gorilazpoker.online/best-hands`
+    ].join('\n');
+    const message = sanitizeForWhatsApp(raw);
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="best-hands-loading">
@@ -201,15 +258,25 @@ function BestHands() {
           <p>Registre e celebre as melhores mãos do Gorila'z Poker Club</p>
         </div>
         
-        {user?.role === 'admin' && (
+        <div>
           <button 
             className="create-hand-btn"
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleShareBestHands}
           >
-            <Plus size={20} />
-            Registrar Mão
+            <Share2 size={20} />
+            Compartilhar
           </button>
-        )}
+          {user?.role === 'admin' && (
+            <button 
+              className="create-hand-btn"
+              onClick={() => setShowCreateModal(true)}
+              style={{ marginLeft: '0.5rem' }}
+            >
+              <Plus size={20} />
+              Registrar Mão
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats Overview */}

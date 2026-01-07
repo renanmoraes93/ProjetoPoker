@@ -706,13 +706,21 @@
     gap: 1.5rem;
   }
   
+  .hand-card {
+    text-align: center;
+  }
   .hand-header {
     flex-direction: column;
     gap: 1rem;
+    align-items: center;
+  }
+  .hand-info {
+    text-align: center;
   }
   
   .hand-actions {
-    align-self: flex-end;
+    align-self: center;
+    justify-content: center;
   }
   
   .detail-row {
@@ -725,9 +733,10 @@
   }
   
   .detail-value {
-    text-align: left;
+    text-align: center;
     grid-column: 2;
   }
+
   
   .form-row {
     grid-template-columns: 1fr;
@@ -786,5 +795,19 @@
     font-size: 2rem;
     width: 50px;
     height: 50px;
+  }
+}
+
+@media (max-width: 500px) {
+  .modal {
+    width: 95%;
+    margin: 0.75rem;
+    border-radius: 12px;
+  }
+  .modal-header {
+    padding: 1rem 1.25rem;
+  }
+  .hand-form {
+    padding: 1.25rem;
   }
 }

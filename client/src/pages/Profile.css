@@ -501,9 +501,11 @@
   }
   
   .stat-item {
-    flex-direction: row;
-    text-align: left;
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
   }
+}
   
   .password-form {
     gap: 1rem;
@@ -512,7 +514,6 @@
   .field-group {
     gap: 0.25rem;
   }
-}
 
 /* Animation for smooth transitions */
 .profile-card,

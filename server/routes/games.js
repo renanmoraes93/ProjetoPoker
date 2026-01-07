@@ -9,7 +9,21 @@ const router = express.Router();
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, limit = 50 } = req.query;
-    let sql = `SELECT g.*, u.username as created_by_username FROM games g LEFT JOIN users u ON g.created_by = u.id`;
+    let sql = `
+      SELECT 
+        g.id,
+        g.name,
+        to_char(g.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI') as date,
+        g.buy_in,
+        g.prize_pool,
+        g.status,
+        g.max_players,
+        g.created_by,
+        g.created_at,
+        u.username as created_by_username
+      FROM games g 
+      LEFT JOIN users u ON g.created_by = u.id
+    `;
     const params = [];
     if (status) {
       sql += ' WHERE g.status = $1';
@@ -41,7 +55,27 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const gameId = req.params.id;
-    const game = await getOne(`SELECT g.*, u.username as created_by_username FROM games g LEFT JOIN users u ON g.created_by = u.id WHERE g.id = $1`, [gameId]);
+    const game = await getOne(`
+      SELECT 
+        g.id,
+        g.name,
+        to_char(g.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI') as date,
+        g.buy_in,
+        g.prize_pool,
+        g.status,
+        g.max_players,
+        g.created_by,
+        g.created_at,
+        g.blind_schedule,
+        g.timer_status,
+        g.timer_started_at,
+        g.timer_paused_at,
+        g.timer_total_paused_seconds,
+        u.username as created_by_username
+      FROM games g 
+      LEFT JOIN users u ON g.created_by = u.id 
+      WHERE g.id = $1
+    `, [gameId]);
     if (!game) {
       return res.status(404).json({ message: 'Jogo não encontrado' });
     }
@@ -56,6 +90,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, requireAdmin, [
   body('name').notEmpty().withMessage('Nome do jogo é obrigatório'),
   body('date').isISO8601().withMessage('Data inválida'),
+  body('date').custom((value) => {
+    if (typeof value !== 'string') return false;
+    if (!value.includes('T')) return false;
+    const t = value.split('T')[1] || '';
+    return t.length >= 4;
+  }).withMessage('Hora é obrigatória'),
   body('buy_in').isFloat({ min: 0 }).withMessage('Buy-in deve ser um valor positivo'),
   body('rebuy_value').optional().isFloat({ min: 0 }).withMessage('Valor do Rebuy inválido'),
   body('addon_value').optional().isFloat({ min: 0 }).withMessage('Valor do Add-on inválido'),
@@ -68,7 +108,7 @@ router.post('/', authenticateToken, requireAdmin, [
   const { name, date, buy_in, rebuy_value = 0, addon_value = 0, max_players = 9 } = req.body;
   try {
     const result = await query(
-      'INSERT INTO games (name, date, buy_in, rebuy_value, addon_value, max_players, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      'INSERT INTO games (name, date, buy_in, rebuy_value, addon_value, max_players, created_by) VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7) RETURNING id',
       [name, date, buy_in, rebuy_value, addon_value, max_players, req.user.id]
     );
     res.status(201).json({ message: 'Jogo criado com sucesso', gameId: result.rows[0].id });
@@ -189,7 +229,10 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     return res.status(500).json({ message: 'Erro ao validar status do jogo' });
   }
   if (name) { updateFields.push(`name = $${values.length + 1}`); values.push(name); }
-  if (date) { updateFields.push(`date = $${values.length + 1}`); values.push(date); }
+  if (date) { 
+    updateFields.push(`date = $${values.length + 1}::timestamptz`); 
+    values.push(date); 
+  }
   if (buy_in !== undefined) { updateFields.push(`buy_in = $${values.length + 1}`); values.push(buy_in); }
   if (rebuy_value !== undefined) { updateFields.push(`rebuy_value = $${values.length + 1}`); values.push(rebuy_value); }
   if (addon_value !== undefined) { updateFields.push(`addon_value = $${values.length + 1}`); values.push(addon_value); }

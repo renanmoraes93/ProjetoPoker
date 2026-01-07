@@ -216,16 +216,32 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
     const queries = {
       upcomingGames: `
-        SELECT g.*, COUNT(gp.id) as participants
+        SELECT 
+          g.id,
+          g.name,
+          to_char(g.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI') as date,
+          g.buy_in,
+          g.prize_pool,
+          g.status,
+          g.max_players,
+          COUNT(gp.id) as participants
         FROM games g
         LEFT JOIN game_participants gp ON g.id = gp.game_id
-        WHERE g.status = 'scheduled' AND g.date >= CURRENT_DATE
+        WHERE g.status = 'scheduled' AND (g.date AT TIME ZONE 'America/Sao_Paulo') >= CURRENT_DATE
         GROUP BY g.id
         ORDER BY g.date ASC
         LIMIT 5
       `,
       recentGames: `
-        SELECT g.*, COUNT(gp.id) as participants
+        SELECT 
+          g.id,
+          g.name,
+          to_char(g.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI') as date,
+          g.buy_in,
+          g.prize_pool,
+          g.status,
+          g.max_players,
+          COUNT(gp.id) as participants
         FROM games g
         LEFT JOIN game_participants gp ON g.id = gp.game_id
         WHERE g.status = 'finished'

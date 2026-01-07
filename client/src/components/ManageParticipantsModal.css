@@ -393,3 +393,27 @@
     font-size: 0.8rem;
   }
 }
+
+@media (max-width: 500px) {
+  .manage-participants-modal {
+    width: 100%;
+    max-height: 90vh;
+    border-radius: 10px;
+    margin: 0 8px;
+  }
+  .manage-participants-modal .modal-header {
+    padding: 16px;
+  }
+  .participants-list,
+  .available-users {
+    max-height: 220px;
+  }
+  .participant-stats {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .modal-footer {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

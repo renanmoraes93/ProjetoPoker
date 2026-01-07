@@ -67,6 +67,25 @@
   margin: 0;
 }
 
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+  margin-top: 0.75rem;
+}
+
+.share-btn:hover {
+  filter: brightness(0.95);
+}
+
 /* Stats Overview */
 .stats-overview {
   display: grid;
@@ -588,6 +607,7 @@
     border-radius: 12px;
     margin-bottom: 1rem;
     border: none;
+    align-items: center;
   }
   
   .ranking-row.rank-1,
@@ -598,7 +618,7 @@
   }
   
   .col-rank {
-    align-self: flex-start;
+    align-self: center;
   }
   
   .mobile-stats {

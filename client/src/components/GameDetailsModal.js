@@ -15,7 +15,8 @@ import {
   UserMinus,
   Trophy,
   X,
-  Timer as TimerIcon
+  Timer as TimerIcon,
+  Share2
 } from 'lucide-react';
 import './GameDetailsModal.css';
 
@@ -36,8 +37,18 @@ const GameDetailsModal = ({
 }) => {
   if (!isOpen || !game) return null;
 
+  const parseDateTime = (dateString) => {
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      const [datePart, timePart] = dateString.split('T');
+      const [y, m, d] = datePart.split('-').map(Number);
+      const [hh, mm] = timePart.split(':');
+      return new Date(y, m - 1, d, parseInt(hh || '0', 10), parseInt(mm || '0', 10));
+    }
+    return new Date(dateString);
+  };
+
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    return parseDateTime(dateString).toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -83,6 +94,51 @@ const GameDetailsModal = ({
   };
 
   const statusInfo = getStatusInfo(game.status);
+
+  const WA = {
+    trophy: '🏆',
+    calendar: '📅',
+    money: '💰',
+    users: '👥',
+    link: '🔗'
+  };
+
+  const sanitizeForWhatsApp = (text) => {
+    const cleaned = text
+      .replace(/[\uFE0F\u200D\u200B\u200C\u200E\u200F\u202A-\u202E]/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[—–]/g, '-');
+    return cleaned
+      .split('')
+      .filter((c) => {
+        const code = c.charCodeAt(0);
+        return c === '\n' || (code >= 32 && code !== 127);
+      })
+      .join('')
+      .trim();
+  };
+
+  const handleShare = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const link = `${origin}/games?gameId=${game.id}`;
+    const dateStr = formatDate(game.date);
+    const names = Array.isArray(game.participants) ? game.participants.map(p => p.username).filter(Boolean) : [];
+    const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    const buyIn = fmt.format(parseFloat(game.buy_in || 0) || 0);
+    const rebuy = fmt.format(parseFloat(game.rebuy_value || 0) || 0);
+    const addon = fmt.format(parseFloat(game.addon_value || 0) || 0);
+    const title = `${WA.trophy} Convite para Jogo de Poker`;
+    const nameLine = `Jogo: ${game.name}`;
+    const dateLine = `${WA.calendar} Data/Hora: ${dateStr}`;
+    const priceLine = `${WA.money} Buy-in: ${buyIn} • Rebuy: ${rebuy} • Add-on: ${addon}`;
+    const countLine = `${WA.users} Jogadores: ${names.length}/${game.max_players || 0}`;
+    const list = names.length ? `\nParticipantes:\n${names.map(n => `- ${n}`).join('\n')}\n` : '';
+    const raw = `${title}\n${nameLine}\n${dateLine}\n${priceLine}\n${countLine}\n${list}${WA.link} ${link}`;
+    const text = sanitizeForWhatsApp(raw);
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    try { window.open(url, '_blank'); } catch (_) {}
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -185,6 +241,10 @@ const GameDetailsModal = ({
                 Sair do Jogo
               </button>
             )}
+            <button className="action-button" onClick={handleShare}>
+              <Share2 size={18} />
+              Compartilhar jogo
+            </button>
             <button className="action-button" onClick={() => onOpenTimer(game)}>
               <TimerIcon size={18} />
               Timer

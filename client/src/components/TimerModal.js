@@ -17,6 +17,9 @@ function TimerModal({ isOpen, onClose, game, user }) {
   const [alarmType, setAlarmType] = useState(() => {
     try { return localStorage.getItem('poker_timer_alarm_type') || 'sine'; } catch (_) { return 'sine'; }
   });
+  const [alarmPreset, setAlarmPreset] = useState(() => {
+    try { return localStorage.getItem('poker_timer_alarm_preset') || 'beep_short'; } catch (_) { return 'beep_short'; }
+  });
   const [alarmVolume, setAlarmVolume] = useState(() => {
     try { const v = parseFloat(localStorage.getItem('poker_timer_alarm_vol')); return isNaN(v) ? 0.2 : Math.max(0, Math.min(1, v)); } catch (_) { return 0.2; }
   });
@@ -62,19 +65,62 @@ function TimerModal({ isOpen, onClose, game, user }) {
       await unlockAudio();
       const ctx = audioCtxRef.current;
       if (!ctx) return;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = alarmType;
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(alarmVolume, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.6);
+      const start = ctx.currentTime;
+      const makeBeep = (startAt, freq, dur) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = alarmType;
+        o.frequency.setValueAtTime(freq, startAt);
+        g.gain.setValueAtTime(0, startAt);
+        g.gain.linearRampToValueAtTime(alarmVolume, startAt + 0.06);
+        g.gain.setValueAtTime(alarmVolume, startAt + Math.max(0, dur - 0.12));
+        g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(startAt);
+        o.stop(startAt + dur + 0.001);
+      };
+      const makeSweep = (startAt, startFreq, endFreq, dur) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = alarmType;
+        o.frequency.setValueAtTime(startFreq, startAt);
+        o.frequency.linearRampToValueAtTime(endFreq, startAt + Math.max(0.2, dur - 0.1));
+        g.gain.setValueAtTime(0, startAt);
+        g.gain.linearRampToValueAtTime(alarmVolume, startAt + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(startAt);
+        o.stop(startAt + dur + 0.001);
+      };
+      if (alarmPreset === 'beep_short') {
+        makeBeep(start, 880, 0.6);
+      } else if (alarmPreset === 'alarm_2s') {
+        makeBeep(start, 900, 2.0);
+      } else if (alarmPreset === 'alarm_3s') {
+        makeBeep(start, 900, 3.0);
+      } else if (alarmPreset === 'alarm_4s') {
+        makeBeep(start, 900, 4.0);
+      } else if (alarmPreset === 'triple_beep') {
+        makeBeep(start, 880, 0.5);
+        makeBeep(start + 0.7, 880, 0.5);
+        makeBeep(start + 1.4, 880, 0.5);
+      } else if (alarmPreset === 'sweep_up_3s') {
+        makeSweep(start, 600, 1200, 3.0);
+      } else if (alarmPreset === 'sweep_down_3s') {
+        makeSweep(start, 1200, 600, 3.0);
+      } else if (alarmPreset === 'buzzer_2_5s') {
+        makeBeep(start, 700, 0.4);
+        makeBeep(start + 0.5, 700, 0.4);
+        makeBeep(start + 1.0, 700, 0.4);
+        makeBeep(start + 1.5, 700, 0.4);
+        makeBeep(start + 2.0, 700, 0.4);
+      } else {
+        makeBeep(start, 880, 0.8);
+      }
     } catch (_) {}
-  }, [alarmEnabled, alarmType, alarmVolume]);
+  }, [alarmEnabled, alarmType, alarmVolume, alarmPreset]);
 
   useEffect(() => {
     if (isOpen && game) {
@@ -220,7 +266,7 @@ function TimerModal({ isOpen, onClose, game, user }) {
             <div className="level-row"><span>Status</span><span>{state?.status || 'idle'}</span></div>
             <div className="control-row">
               <Link to={`/admin?tab=timer&gameId=${game.id}`} className="control-btn secondary"><Settings size={16} /> Configurar</Link>
-              <button className="control-btn secondary" onClick={() => setShowSound(v => !v)}><Bell size={16} /> Som</button>
+              <button className="control-btn secondary" onClick={async () => { await unlockAudio(); setShowSound(v => !v); }}><Bell size={16} /> Som</button>
               {isAdmin && state?.status !== 'running' && (
                 <button className="control-btn" onClick={start} disabled={loading || game?.status !== 'in_progress'}><Play size={16} /> Iniciar</button>
               )}
@@ -244,6 +290,16 @@ function TimerModal({ isOpen, onClose, game, user }) {
                   <button onClick={() => { const v = !alarmEnabled; setAlarmEnabled(v); try { localStorage.setItem('poker_timer_alarm', v ? 'on' : 'off'); } catch (_) {} }} className="control-btn secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     {alarmEnabled ? <Bell size={16} /> : <BellOff size={16} />} {alarmEnabled ? 'Som ativado' : 'Som desativado'}
                   </button>
+                  <select value={alarmPreset} onChange={(e) => { const t = e.target.value; setAlarmPreset(t); try { localStorage.setItem('poker_timer_alarm_preset', t); } catch (_) {} }} style={{ background: '#111', color: '#fff', borderRadius: 6, padding: '6px 8px' }}>
+                    <option value="beep_short">Beep curto</option>
+                    <option value="alarm_2s">Alarme 2s</option>
+                    <option value="alarm_3s">Alarme 3s</option>
+                    <option value="alarm_4s">Alarme 4s</option>
+                    <option value="triple_beep">Triplo beep 1.9s</option>
+                    <option value="sweep_up_3s">Sweep crescente 3s</option>
+                    <option value="sweep_down_3s">Sweep decrescente 3s</option>
+                    <option value="buzzer_2_5s">Buzzer ~2.5s</option>
+                  </select>
                   <select value={alarmType} onChange={(e) => { const t = e.target.value; setAlarmType(t); try { localStorage.setItem('poker_timer_alarm_type', t); } catch (_) {} }} style={{ background: '#111', color: '#fff', borderRadius: 6, padding: '6px 8px' }}>
                     <option value="sine">Sine</option>
                     <option value="square">Square</option>
